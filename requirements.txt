@@ -16,3 +16,4 @@ mysqlclient
 gunicorn 
 dj-database-url 
 whitenoise
+pymysql
