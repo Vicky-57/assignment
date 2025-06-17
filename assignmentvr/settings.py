@@ -10,7 +10,7 @@ SECRET_KEY = 'django-insecure-s2$nh-+all6oc5sgd59b&r@_c=_383wy3#7#wngfl1-tiw+@@l
 
 DEBUG = os.getenv("DEBUG", "False") == "True"
 
-ALLOWED_HOSTS = ['https://assignment-2sc3.onrender.com']
+ALLOWED_HOSTS = ['assignment-2sc3.onrender.com']
 
 INSTALLED_APPS = [
     'django.contrib.admin',
