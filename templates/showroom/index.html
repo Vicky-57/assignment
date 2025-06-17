@@ -1,0 +1,1089 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Interior Design Suite</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .header {
+            text-align: center;
+            color: white;
+            margin-bottom: 40px;
+            padding: 40px 0;
+        }
+
+        .header h1 {
+            font-size: 3.5rem;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+
+        .header p {
+            font-size: 1.2rem;
+            opacity: 0.9;
+        }
+
+        /* Navigation Tabs */
+        .nav-tabs {
+            display: flex;
+            justify-content: center;
+            margin-bottom: 30px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 15px;
+            padding: 10px;
+            backdrop-filter: blur(10px);
+        }
+
+        .nav-tab {
+            background: transparent;
+            border: none;
+            color: white;
+            padding: 15px 30px;
+            margin: 0 5px;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-size: 16px;
+            font-weight: 600;
+        }
+
+        .nav-tab.active {
+            background: rgba(255, 255, 255, 0.2);
+            transform: translateY(-2px);
+        }
+
+        .nav-tab:hover {
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        /* Tab Content */
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+            animation: fadeIn 0.5s ease;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* Showroom Agent Styles (existing) */
+        .main-content {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+            margin-bottom: 40px;
+        }
+
+        .chat-section, .design-section, .card {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            backdrop-filter: blur(10px);
+        }
+
+        .section-title {
+            font-size: 1.8rem;
+            color: #4a5568;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        .chat-container {
+            height: 400px;
+            border: 2px solid #e2e8f0;
+            border-radius: 15px;
+            overflow-y: auto;
+            padding: 20px;
+            background: #f7fafc;
+            margin-bottom: 20px;
+        }
+
+        .message {
+            margin-bottom: 15px;
+            padding: 12px 16px;
+            border-radius: 18px;
+            max-width: 80%;
+            animation: slideIn 0.3s ease;
+        }
+
+        .user-message {
+            background: #667eea;
+            color: white;
+            margin-left: auto;
+            text-align: right;
+        }
+
+        .ai-message {
+            background: #e2e8f0;
+            color: #4a5568;
+        }
+
+        .input-group {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .input-field {
+            flex: 1;
+            padding: 15px;
+            border: 2px solid #e2e8f0;
+            border-radius: 12px;
+            font-size: 16px;
+            transition: all 0.3s ease;
+        }
+
+        .input-field:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        .btn {
+            padding: 15px 30px;
+            border: none;
+            border-radius: 12px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+        }
+
+        .btn-secondary {
+            background: #48bb78;
+            color: white;
+        }
+
+        .btn-secondary:hover {
+            background: #38a169;
+            transform: translateY(-2px);
+        }
+
+        .btn-export {
+            background: #ed8936;
+            color: white;
+        }
+
+        .btn-export:hover {
+            background: #dd6b20;
+            transform: translateY(-2px);
+        }
+
+        /* Design Agent Specific Styles */
+        .design-agent-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+            margin-bottom: 30px;
+        }
+
+        .full-width-card {
+            grid-column: 1 / -1;
+        }
+
+        .design-result {
+            background: #f0fff4;
+            border: 2px solid #68d391;
+            border-radius: 15px;
+            padding: 20px;
+            margin-top: 20px;
+            display: none;
+        }
+
+        .design-result.show {
+            display: block;
+            animation: slideIn 0.5s ease;
+        }
+
+        .product-list {
+            max-height: 400px;
+            overflow-y: auto;
+            border: 1px solid #e2e8f0;
+            border-radius: 10px;
+            padding: 15px;
+            background: #f9f9f9;
+        }
+
+        .product-item {
+            background: white;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 10px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .product-item h4 {
+            color: #2d3748;
+            margin-bottom: 8px;
+        }
+
+        .product-item p {
+            margin: 5px 0;
+            font-size: 14px;
+            color: #4a5568;
+        }
+
+        .price {
+            font-weight: bold;
+            color: #38a169;
+        }
+
+        .templates-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+
+        .template-card {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            transition: transform 0.3s ease;
+        }
+
+        .template-card:hover {
+            transform: translateY(-5px);
+        }
+
+        .session-info {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            backdrop-filter: blur(10px);
+            margin-top: 30px;
+        }
+
+        .session-details {
+            display: none;
+            background: #f7fafc;
+            border-radius: 15px;
+            padding: 20px;
+            margin-top: 20px;
+        }
+
+        .session-details.show {
+            display: block;
+            animation: slideIn 0.5s ease;
+        }
+
+        .status-bar {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 15px;
+            padding: 15px;
+            margin-bottom: 20px;
+            text-align: center;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 20px;
+        }
+
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 10px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .error-message {
+            background: #fed7d7;
+            color: #c53030;
+            padding: 15px;
+            border-radius: 10px;
+            margin: 10px 0;
+            display: none;
+        }
+
+        .success-message {
+            background: #c6f6d5;
+            color: #2f855a;
+            padding: 15px;
+            border-radius: 10px;
+            margin: 10px 0;
+            display: none;
+        }
+
+        @media (max-width: 768px) {
+            .main-content, .design-agent-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .header h1 {
+                font-size: 2.5rem;
+            }
+
+            .nav-tabs {
+                flex-direction: column;
+            }
+
+            .nav-tab {
+                margin: 5px 0;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🏠 AI Interior Design Suite</h1>
+            <p>Transform your space with intelligent design recommendations</p>
+        </div>
+
+        <!-- Navigation Tabs -->
+        <div class="nav-tabs">
+            <button class="nav-tab active" onclick="switchTab('showroom')">💬 Showroom Agent</button>
+            <button class="nav-tab" onclick="switchTab('design')">🎨 Design Agent</button>
+        </div>
+
+        <div class="error-message" id="errorMessage"></div>
+        <div class="success-message" id="successMessage"></div>
+
+        <!-- Showroom Agent Tab -->
+        <div id="showroom-tab" class="tab-content active">
+            <div class="status-bar">
+                <span id="sessionStatus">Ready to start your design journey</span>
+                <button id="startSessionBtn" class="btn btn-primary" style="margin-left: 20px;">Start New Session</button>
+            </div>
+
+            <div class="main-content">
+                <div class="chat-section">
+                    <h2 class="section-title">💬 Chat with AI Designer</h2>
+                    <div class="chat-container" id="chatContainer">
+                        <div class="message ai-message">
+                            <strong>AI Designer:</strong> Hello! I'm your AI interior design assistant. Start a session and tell me about your dream space!
+                        </div>
+                    </div>
+                    <div class="input-group">
+                        <input type="text" class="input-field" id="chatInput" placeholder="Describe your design preferences..." disabled>
+                        <button class="btn btn-primary" id="sendChatBtn" disabled>Send</button>
+                    </div>
+                </div>
+
+                <div class="design-section">
+                    <h2 class="section-title">🎨 Design Controls</h2>
+                    <div class="input-group">
+                        <input type="text" class="input-field" id="roomType" placeholder="Room Type (e.g., living room)" disabled>
+                        <input type="text" class="input-field" id="stylePreference" placeholder="Style (e.g., modern)" disabled>
+                    </div>
+                    <div class="input-group">
+                        <input type="number" class="input-field" id="budgetMin" placeholder="Min Budget" disabled>
+                        <input type="number" class="input-field" id="budgetMax" placeholder="Max Budget" disabled>
+                    </div>
+                    <button class="btn btn-secondary" id="updatePreferencesBtn" disabled>Update Preferences</button>
+                    
+                    <div class="design-result" id="designResult">
+                        <h3>Preferences Updated!</h3>
+                        <p id="designDetails"></p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="session-info">
+                <h2 class="section-title">📊 Session Information</h2>
+                <button class="btn btn-secondary" id="getSessionStatusBtn" disabled>Get Session Status</button>
+                <div class="session-details" id="sessionDetails">
+                    <h3>Session Details</h3>
+                    <div id="sessionDetailsContent"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Design Agent Tab -->
+        <div id="design-tab" class="tab-content">
+            <div class="status-bar">
+                <span id="designStatus">Ready to generate design recommendations</span>
+                <div style="margin-top: 10px;">
+                    <strong>Current Session:</strong> <span id="currentSessionId">None</span>
+                </div>
+            </div>
+
+            <div class="design-agent-grid">
+                <!-- Generate Design Section -->
+                <div class="card">
+                    <h2 class="section-title">🎨 Generate Design</h2>
+                    <div class="input-group">
+                        <input type="text" class="input-field" id="roomDimensions" placeholder="Room Dimensions (e.g., 12x10x8)">
+                    </div>
+                    <button class="btn btn-primary" id="generateDesignBtn" disabled>Generate Design Recommendation</button>
+                    
+                    <div class="design-result" id="generatedDesign">
+                        <h3>Generated Design</h3>
+                        <div id="generatedDesignContent"></div>
+                    </div>
+                </div>
+
+                <!-- Design Templates Section -->
+                <div class="card">
+                    <h2 class="section-title">📋 Available Templates</h2>
+                    <button class="btn btn-secondary" id="loadTemplatesBtn">Load Templates</button>
+                    <div id="templatesContainer">
+                        <p>Click "Load Templates" to see available design templates.</p>
+                    </div>
+                </div>
+
+                <!-- Design Details Section -->
+                <div class="card full-width-card">
+                    <h2 class="section-title">📝 Design Details</h2>
+                    <div class="input-group">
+                        <input type="text" class="input-field" id="designIdInput" placeholder="Enter Design ID">
+                        <button class="btn btn-secondary" id="getDesignDetailsBtn">Get Details</button>
+                    </div>
+                    
+                    <div class="design-result" id="designDetailsResult">
+                        <div id="designDetailsContent"></div>
+                    </div>
+                </div>
+
+                <!-- Export Section -->
+                <div class="card full-width-card">
+                    <h2 class="section-title">📄 Export Design</h2>
+                    <div class="input-group">
+                        <input type="text" class="input-field" id="exportDesignId" placeholder="Enter Design ID for Export">
+                        <button class="btn btn-export" id="exportPdfBtn">Export as PDF</button>
+                    </div>
+                    <div id="exportStatus"></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="loading" id="loadingSpinner">
+            <div class="spinner"></div>
+            <p>Processing your request...</p>
+        </div>
+    </div>
+
+    <script>
+        let currentSessionId = null;
+        const API_BASE = 'http://localhost:8000';
+
+        // DOM Elements - Shared
+        const errorMessage = document.getElementById('errorMessage');
+        const successMessage = document.getElementById('successMessage');
+        const loadingSpinner = document.getElementById('loadingSpinner');
+
+        // DOM Elements - Showroom Agent
+        const startSessionBtn = document.getElementById('startSessionBtn');
+        const chatInput = document.getElementById('chatInput');
+        const sendChatBtn = document.getElementById('sendChatBtn');
+        const updatePreferencesBtn = document.getElementById('updatePreferencesBtn');
+        const getSessionStatusBtn = document.getElementById('getSessionStatusBtn');
+        const chatContainer = document.getElementById('chatContainer');
+        const sessionStatus = document.getElementById('sessionStatus');
+
+        // DOM Elements - Design Agent
+        const currentSessionIdSpan = document.getElementById('currentSessionId');
+        const generateDesignBtn = document.getElementById('generateDesignBtn');
+        const loadTemplatesBtn = document.getElementById('loadTemplatesBtn');
+        const getDesignDetailsBtn = document.getElementById('getDesignDetailsBtn');
+        const exportPdfBtn = document.getElementById('exportPdfBtn');
+
+        // Tab Switching
+        function switchTab(tabName) {
+            // Hide all tab contents
+            document.querySelectorAll('.tab-content').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            
+            // Remove active class from all nav tabs
+            document.querySelectorAll('.nav-tab').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            
+            // Show selected tab
+            document.getElementById(tabName + '-tab').classList.add('active');
+            
+            // Add active class to clicked nav tab
+            event.target.classList.add('active');
+            
+            // Update design agent session display
+            if (tabName === 'design') {
+                updateDesignAgentStatus();
+            }
+        }
+
+        function updateDesignAgentStatus() {
+            if (currentSessionId) {
+                currentSessionIdSpan.textContent = currentSessionId.substring(0, 8) + '...';
+                generateDesignBtn.disabled = false;
+            } else {
+                currentSessionIdSpan.textContent = 'None - Start a session in Showroom Agent';
+                generateDesignBtn.disabled = true;
+            }
+        }
+
+        // Utility Functions
+        function showLoading() {
+            loadingSpinner.style.display = 'block';
+        }
+
+        function hideLoading() {
+            loadingSpinner.style.display = 'none';
+        }
+
+        function showError(message) {
+            errorMessage.textContent = message;
+            errorMessage.style.display = 'block';
+            setTimeout(() => errorMessage.style.display = 'none', 5000);
+        }
+
+        function showSuccess(message) {
+            successMessage.textContent = message;
+            successMessage.style.display = 'block';
+            setTimeout(() => successMessage.style.display = 'none', 5000);
+        }
+
+        function addMessage(message, isUser = false) {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${isUser ? 'user-message' : 'ai-message'}`;
+            messageDiv.innerHTML = `<strong>${isUser ? 'You' : 'AI Designer'}:</strong> ${message}`;
+            chatContainer.appendChild(messageDiv);
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+
+        // Showroom Agent Functions (existing functionality)
+        async function startSession() {
+            showLoading();
+            try {
+                const response = await fetch(`${API_BASE}/api/showroom/start-session/`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({})
+                });
+
+                const data = await response.json();
+                if (response.ok) {
+                    currentSessionId = data.session_id;
+                    sessionStatus.textContent = `Session Active: ${currentSessionId.substring(0, 8)}...`;
+                    
+                    // Enable all controls
+                    chatInput.disabled = false;
+                    sendChatBtn.disabled = false;
+                    document.getElementById('roomType').disabled = false;
+                    document.getElementById('stylePreference').disabled = false;
+                    document.getElementById('budgetMin').disabled = false;
+                    document.getElementById('budgetMax').disabled = false;
+                    updatePreferencesBtn.disabled = false;
+                    getSessionStatusBtn.disabled = false;
+                    
+                    startSessionBtn.textContent = 'New Session';
+                    showSuccess('Session started successfully!');
+                    addMessage('Session started! You can now chat with me about your design preferences.');
+                    
+                    // Update design agent status
+                    updateDesignAgentStatus();
+                } else {
+                    showError(data.error || 'Failed to start session');
+                }
+            } catch (error) {
+                showError('Network error: ' + error.message);
+                console.error('Start session error:', error);
+            }
+            hideLoading();
+        }
+
+        async function sendChatMessage() {
+            const message = chatInput.value.trim();
+            if (!message || !currentSessionId) return;
+
+            addMessage(message, true);
+            chatInput.value = '';
+            showLoading();
+
+            try {
+                const response = await fetch(`${API_BASE}/api/showroom/chat/`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        session_id: currentSessionId,
+                        message: message
+                    })
+                });
+
+                const data = await response.json();
+                if (response.ok) {
+                    let aiResponse = 'Message processed successfully';
+                    if (data.response) {
+                        aiResponse = data.response;
+                    } else if (data.ai_response) {
+                        aiResponse = data.ai_response;
+                    } else if (data.message) {
+                        aiResponse = data.message;
+                    }
+                    
+                    addMessage(aiResponse);
+                    
+                    if (data.preferences_updated) {
+                        showSuccess('Your preferences have been updated!');
+                    }
+                } else {
+                    showError(data.error || 'Failed to send message');
+                    addMessage('Sorry, I encountered an error processing your message.');
+                }
+            } catch (error) {
+                showError('Network error: ' + error.message);
+                addMessage('Sorry, there was a network error. Please try again.');
+                console.error('Chat error:', error);
+            }
+            hideLoading();
+        }
+
+        async function updatePreferences() {
+            if (!currentSessionId) {
+                showError('Please start a session first');
+                return;
+            }
+
+            const roomType = document.getElementById('roomType').value.trim();
+            const stylePreference = document.getElementById('stylePreference').value.trim();
+            const budgetMin = document.getElementById('budgetMin').value;
+            const budgetMax = document.getElementById('budgetMax').value;
+
+            let message = 'I want to update my preferences: ';
+            const preferences = [];
+            
+            if (roomType) preferences.push(`room type: ${roomType}`);
+            if (stylePreference) preferences.push(`style: ${stylePreference}`);
+            if (budgetMin || budgetMax) {
+                let budget = 'budget: ';
+                if (budgetMin && budgetMax) {
+                    budget += `$${budgetMin} - $${budgetMax}`;
+                } else if (budgetMin) {
+                    budget += `minimum $${budgetMin}`;
+                } else if (budgetMax) {
+                    budget += `maximum $${budgetMax}`;
+                }
+                preferences.push(budget);
+            }
+
+            if (preferences.length === 0) {
+                showError('Please enter at least one preference');
+                return;
+            }
+
+            message += preferences.join(', ');
+            
+            addMessage(message, true);
+            showLoading();
+
+            try {
+                const response = await fetch(`${API_BASE}/api/showroom/chat/`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        session_id: currentSessionId,
+                        message: message
+                    })
+                });
+
+                const data = await response.json();
+                if (response.ok) {
+                    let aiResponse = 'Preferences updated successfully!';
+                    if (data.response) {
+                        aiResponse = data.response;
+                    } else if (data.ai_response) {
+                        aiResponse = data.ai_response;
+                    }
+                    
+                    addMessage(aiResponse);
+                    document.getElementById('designResult').classList.add('show');
+                    document.getElementById('designDetails').textContent = 'Your preferences have been saved and will be used for future recommendations.';
+                    showSuccess('Preferences updated successfully!');
+                    
+                    // Clear the form
+                    document.getElementById('roomType').value = '';
+                    document.getElementById('stylePreference').value = '';
+                    document.getElementById('budgetMin').value = '';
+                    document.getElementById('budgetMax').value = '';
+                } else {
+                    showError(data.error || 'Failed to update preferences');
+                }
+            } catch (error) {
+                showError('Network error: ' + error.message);
+                console.error('Update preferences error:', error);
+            }
+            hideLoading();
+        }
+
+        async function getSessionStatus() {
+            if (!currentSessionId) {
+                showError('Please start a session first');
+                return;
+            }
+
+            showLoading();
+            try {
+                const response = await fetch(`${API_BASE}/api/showroom/session/${currentSessionId}/`);
+                const data = await response.json();
+                
+                if (response.ok) {
+                    const sessionDetails = document.getElementById('sessionDetails');
+                    const sessionDetailsContent = document.getElementById('sessionDetailsContent');
+                    
+                    let html = `
+                        <p><strong>Session ID:</strong> ${data.session_id}</p>
+                        <p><strong>Room Type:</strong> ${data.room_type || 'Not specified'}</p>
+                        <p><strong>Style Preference:</strong> ${data.style_preference || 'Not specified'}</p>
+                        <p><strong>Budget Range:</strong> ${data.budget_range || 'Not specified'}</p>
+                        <p><strong>Status:</strong> ${data.is_active ? 'Active' : 'Inactive'}</p>
+                    `;
+                    
+                    if (data.recent_interactions && data.recent_interactions.length > 0) {
+                        html += '<h4>Recent Interactions:</h4><ul>';
+                        data.recent_interactions.forEach(interaction => {
+                            html += `<li><strong>You:</strong> ${interaction.user_message}<br>
+                                    <strong>AI:</strong> ${interaction.ai_response}<br>
+                                    <em>Time:</em> ${new Date(interaction.timestamp).toLocaleString()}</li>`;
+                        });
+                        html += '</ul>';
+                    }
+                    
+                    sessionDetailsContent.innerHTML = html;
+                    sessionDetails.classList.add('show');
+                    showSuccess('Session status loaded');
+                } else {
+                    showError(data.error || 'Failed to get session status');
+                }
+            } catch (error) {
+                showError('Network error: ' + error.message);
+                console.error('Session status error:', error);
+            }
+            hideLoading();
+        }
+
+        // Design Agent Functions
+        async function generateDesign() {
+            if (!currentSessionId) {
+                showError('Please start a session in Showroom Agent first');
+                return;
+            }
+
+            const roomDimensions = document.getElementById('roomDimensions').value.trim();
+            
+            showLoading();
+            try {
+                const requestBody = {
+                    session_id: currentSessionId
+                };
+                
+                if (roomDimensions) {
+                    requestBody.room_dimensions = roomDimensions;
+                }
+
+                const response = await fetch(`${API_BASE}/api/design/generate/`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(requestBody)
+                });
+
+                const data = await response.json();
+                if (response.ok) {
+                    const designResultDiv = document.getElementById('generatedDesign');
+                    const contentDiv = document.getElementById('generatedDesignContent');
+                    
+                    let html = `
+                        <h4>Design Generated Successfully! 🎉</h4>
+                        <p><strong>Design ID:</strong> ${data.design_id || 'N/A'}</p>
+                        <p><strong>Template:</strong> ${data.template_name || 'N/A'}</p>
+                        <p><strong>Room Type:</strong> ${data.room_type || 'N/A'}</p>
+                        <p><strong>Style:</strong> ${data.style || 'N/A'}</p>
+                        <p><strong>Total Cost:</strong> $${data.total_cost || '0'}</p>
+                        <p><strong>Status:</strong> ${data.status || 'N/A'}</p>
+                    `;
+                    
+                    if (data.ai_reasoning) {
+                        html += `<p><strong>AI Reasoning:</strong> ${data.ai_reasoning}</p>`;
+                    }
+                    
+                    if (data.products && data.products.length > 0) {
+                        html += '<h5>Recommended Products:</h5><div class="product-list">';
+                        data.products.forEach(product => {
+                            html += `
+                                <div class="product-item">
+                                    <h4>${product.name}</h4>
+                                    <p><strong>Category:</strong> ${product.category}</p>
+                                    <p><strong>Style:</strong> ${product.style || 'N/A'}</p>
+                                    <p><strong>Material:</strong> ${product.material || 'N/A'}</p>
+                                    <p><strong>Quantity:</strong> ${product.quantity || 1}</p>
+                                    <p class="price"><strong>Price:</strong> $${product.unit_price || '0'}</p>
+                                    ${product.reasoning ? `<p><em>Reasoning:</em> ${product.reasoning}</p>` : ''}
+                                </div>
+                            `;
+                        });
+                        html += '</div>';
+                    }
+                    
+                    contentDiv.innerHTML = html;
+                    designResultDiv.classList.add('show');
+                    showSuccess('Design generated successfully!');
+                } else {
+                    showError(data.error || 'Failed to generate design');
+                }
+            } catch (error) {
+                showError('Network error: ' + error.message);
+                console.error('Generate design error:', error);
+            }
+            hideLoading();
+        }
+
+        async function loadTemplates() {
+            showLoading();
+            try {
+                const response = await fetch(`${API_BASE}/api/design/templates/`);
+                const data = await response.json();
+                
+                if (response.ok) {
+                    const templatesContainer = document.getElementById('templatesContainer');
+                    
+                    if (data.templates && data.templates.length > 0) {
+                        let html = '<div class="templates-grid">';
+                        data.templates.forEach(template => {
+                            html += `
+                                <div class="template-card">
+                                    <h4>${template.name}</h4>
+                                    <p><strong>Room Type:</strong> ${template.room_type}</p>
+                                    <p><strong>Style:</strong> ${template.style}</p>
+                                    <p><strong>Dimensions:</strong> ${template.dimensions || 'N/A'}</p>
+                                    <p><strong>Description:</strong> ${template.description || 'No description available'}</p>
+                                    ${template.product_slots ? `<p><strong>Product Slots:</strong> ${JSON.stringify(template.product_slots).replace(/[{}]/g, '').replace(/"/g, '')}</p>` : ''}
+                                </div>
+                            `;
+                        });
+                        html += '</div>';
+                        templatesContainer.innerHTML = html;
+                    } else {
+                        templatesContainer.innerHTML = '<p>No templates available.</p>';
+                    }
+                    
+                    showSuccess('Templates loaded successfully!');
+                } else {
+                    showError(data.error || 'Failed to load templates');
+                }
+            } catch (error) {
+                showError('Network error: ' + error.message);
+                console.error('Load templates error:', error);
+            }
+            hideLoading();
+        }
+
+        async function getDesignDetails() {
+            const designId = document.getElementById('designIdInput').value.trim();
+            if (!designId) {
+                showError('Please enter a Design ID');
+                return;
+            }
+
+            showLoading();
+            try {
+                const response = await fetch(`${API_BASE}/api/design/details/${designId}/`);
+                const data = await response.json();
+                
+                if (response.ok) {
+                    const designDetailsResult = document.getElementById('designDetailsResult');
+                    const designDetailsContent = document.getElementById('designDetailsContent');
+                    
+                    let html = `
+                        <h4>Design Details for ID: ${data.design_id}</h4>
+                        <div style="background: #f8f9fa; padding: 15px; border-radius: 10px; margin: 10px 0;">
+                            <p><strong>Template:</strong> ${data.template_name}</p>
+                            <p><strong>Room Type:</strong> ${data.room_type}</p>
+                            <p><strong>Style:</strong> ${data.style}</p>
+                            <p><strong>Dimensions:</strong> ${data.dimensions || 'N/A'}</p>
+                            <p><strong>Total Cost:</strong> $${data.total_cost}</p>
+                            <p><strong>Status:</strong> ${data.status}</p>
+                            <p><strong>Created:</strong> ${new Date(data.created_at).toLocaleString()}</p>
+                            <p><strong>Updated:</strong> ${new Date(data.updated_at).toLocaleString()}</p>
+                        </div>
+                    `;
+                    
+                    if (data.ai_reasoning) {
+                        html += `
+                            <div style="background: #e8f5e8; padding: 15px; border-radius: 10px; margin: 10px 0;">
+                                <h5>AI Reasoning:</h5>
+                                <p>${data.ai_reasoning}</p>
+                            </div>
+                        `;
+                    }
+                    
+                    if (data.user_preferences && Object.keys(data.user_preferences).length > 0) {
+                        html += `
+                            <div style="background: #fff3cd; padding: 15px; border-radius: 10px; margin: 10px 0;">
+                                <h5>User Preferences:</h5>
+                                <pre>${JSON.stringify(data.user_preferences, null, 2)}</pre>
+                            </div>
+                        `;
+                    }
+                    
+                    if (data.products && data.products.length > 0) {
+                        html += '<h5>Product Details:</h5><div class="product-list">';
+                        data.products.forEach(product => {
+                            html += `
+                                <div class="product-item">
+                                    <h4>${product.name} (SKU: ${product.sku})</h4>
+                                    <p><strong>Category:</strong> ${product.category}</p>
+                                    <p><strong>Style:</strong> ${product.style || 'N/A'}</p>
+                                    <p><strong>Material:</strong> ${product.material || 'N/A'}</p>
+                                    <p><strong>Slot:</strong> ${product.slot_name || 'N/A'}</p>
+                                    <p><strong>Quantity:</strong> ${product.quantity}</p>
+                                    <p class="price"><strong>Unit Price:</strong> $${product.unit_price}</p>
+                                    <p class="price"><strong>Total Price:</strong> $${product.total_price}</p>
+                                    ${product.reasoning ? `<p><em>Selection Reasoning:</em> ${product.reasoning}</p>` : ''}
+                                </div>
+                            `;
+                        });
+                        html += '</div>';
+                    }
+                    
+                    designDetailsContent.innerHTML = html;
+                    designDetailsResult.classList.add('show');
+                    showSuccess('Design details loaded successfully!');
+                } else {
+                    showError(data.error || 'Failed to load design details');
+                }
+            } catch (error) {
+                showError('Network error: ' + error.message);
+                console.error('Get design details error:', error);
+            }
+            hideLoading();
+        }
+
+        async function exportPDF() {
+            const designId = document.getElementById('exportDesignId').value.trim();
+            if (!designId) {
+                showError('Please enter a Design ID for export');
+                return;
+            }
+
+            const exportStatus = document.getElementById('exportStatus');
+            exportStatus.innerHTML = '<p>Generating PDF...</p>';
+            showLoading();
+
+            try {
+                const response = await fetch(`${API_BASE}/api/design/export-pdf/${designId}/`);
+                
+                if (response.ok) {
+                    const blob = await response.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.style.display = 'none';
+                    a.href = url;
+                    a.download = `design_recommendation_${designId}.pdf`;
+                    document.body.appendChild(a);
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+                    document.body.removeChild(a);
+                    
+                    exportStatus.innerHTML = '<p style="color: green;">PDF exported successfully!</p>';
+                    showSuccess('PDF exported successfully!');
+                } else {
+                    const errorData = await response.json();
+                    exportStatus.innerHTML = `<p style="color: red;">Export failed: ${errorData.error || 'Unknown error'}</p>`;
+                    showError(errorData.error || 'Failed to export PDF');
+                }
+            } catch (error) {
+                exportStatus.innerHTML = `<p style="color: red;">Export failed: ${error.message}</p>`;
+                showError('Network error: ' + error.message);
+                console.error('Export PDF error:', error);
+            }
+            hideLoading();
+        }
+
+        // Event Listeners
+        startSessionBtn.addEventListener('click', startSession);
+        sendChatBtn.addEventListener('click', sendChatMessage);
+        updatePreferencesBtn.addEventListener('click', updatePreferences);
+        getSessionStatusBtn.addEventListener('click', getSessionStatus);
+        generateDesignBtn.addEventListener('click', generateDesign);
+        loadTemplatesBtn.addEventListener('click', loadTemplates);
+        getDesignDetailsBtn.addEventListener('click', getDesignDetails);
+        exportPdfBtn.addEventListener('click', exportPDF);
+
+        // Allow Enter key to send chat messages
+        chatInput.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter' && !chatInput.disabled) {
+                sendChatMessage();
+            }
+        });
+
+        // Allow Enter key for design ID inputs
+        document.getElementById('designIdInput').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                getDesignDetails();
+            }
+        });
+
+        document.getElementById('exportDesignId').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                exportPDF();
+            }
+        });
+
+        // Initialize the app
+        console.log('AI Interior Design Suite initialized');
+    </script>
+</body>
+</html>

@@ -1,0 +1,15 @@
+jwt
+sqlalchemy
+fastapi
+bcrypt
+django
+Pillow
+djangorestframework
+openai
+reportlab
+pandas
+numpy
+scikit-learn
+django-cors-headers
+python-dotenv
+mysqlclient
