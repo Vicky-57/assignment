@@ -13,3 +13,6 @@ scikit-learn
 django-cors-headers
 python-dotenv
 mysqlclient
+gunicorn 
+dj-database-url 
+whitenoise
