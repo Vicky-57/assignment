@@ -1,4 +1,4 @@
-import dj_database_url
+#import dj_database_url
 from pathlib import Path
 import os
 from dotenv import load_dotenv
@@ -10,7 +10,7 @@ SECRET_KEY = 'django-insecure-s2$nh-+all6oc5sgd59b&r@_c=_383wy3#7#wngfl1-tiw+@@l
 
 DEBUG = True
 
-ALLOWED_HOSTS = ['assignment-2sc3.onrender.com']
+ALLOWED_HOSTS = []
 
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -69,20 +69,20 @@ CORS_ALLOW_CREDENTIALS = True
 # Database
 # https://docs.djangoproject.com/en/4.2/ref/settings/#databases
 
-# DATABASES = {
-#     'default': {
-#         'ENGINE': 'django.db.backends.mysql',
-#         'NAME': 'assignment',            # your database name
-#         'USER': 'root',          # your database user (or 'root')
-#         'PASSWORD': 'om@123',     # your password
-#         'HOST': 'localhost',               # or '127.0.0.1'
-#         'PORT': '3306',                    # default MySQL port
-#     }
-# }
-
 DATABASES = {
-    'default': dj_database_url.config(default=os.getenv('DATABASE_URL'))
+    'default': {
+        'ENGINE': 'django.db.backends.mysql',
+        'NAME': 'assignment',            # your database name
+        'USER': 'root',          # your database user (or 'root')
+        'PASSWORD': 'om@123',     # your password
+        'HOST': 'localhost',               # or '127.0.0.1'
+        'PORT': '3306',                    # default MySQL port
+    }
 }
+
+# DATABASES = {
+#     'default': dj_database_url.config(default=os.getenv('DATABASE_URL'))
+# }
 
 
 # Password validation

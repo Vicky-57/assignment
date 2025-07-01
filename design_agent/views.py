@@ -115,7 +115,10 @@ class DesignDetailsView(APIView):
             # Calculate additional metrics
             total_items = sum(prod_rec.quantity for prod_rec in design.product_recommendations.all())
             avg_item_cost = float(design.total_cost) / total_items if total_items > 0 else 0
-            
+            try:
+                room_dimensions = json.loads(design.room_dimensions) if isinstance(design.room_dimensions, str) else design.room_dimensions
+            except Exception:
+                room_dimensions = {}
             # Build response
             response_data = {
                 'design_id': str(design.id),
@@ -129,8 +132,8 @@ class DesignDetailsView(APIView):
                     'estimated_budget': getattr(design.layout_template, 'estimated_budget', {}),
                 },
                 'room_details': {
-                    'dimensions': design.room_dimensions,
-                    'area_sqft': design.room_dimensions.get('area_sqft', 0),
+                    'dimensions': room_dimensions,
+                    'area_sqft': room_dimensions.get('area_sqft', 0),
                 },
                 'user_preferences': design.user_preferences,
                 'ai_reasoning': design.ai_reasoning,

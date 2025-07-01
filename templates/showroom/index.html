@@ -510,9 +510,52 @@
     </div>
 
     <script>
-        let currentSessionId = null;
-        const API_BASE = 'https://assignment-2sc3.onrender.com';
-        //const API_BASE = 'http://localhost:8000';
+        // Add this debug code to your script section to catch ALL uses of currentSessionId
+
+// 1. First, let's override the currentSessionId property to log all access
+        let _currentSessionId = null;
+
+        Object.defineProperty(window, 'currentSessionId', {
+            get: function() {
+                console.log('Getting currentSessionId:', _currentSessionId, 'type:', typeof _currentSessionId);
+                console.trace('Called from:'); // This will show the call stack
+                return _currentSessionId;
+            },
+            set: function(value) {
+                console.log('Setting currentSessionId to:', value, 'type:', typeof value);
+                console.trace('Set from:'); // This will show the call stack
+                _currentSessionId = value;
+            }
+        });
+
+        // 2. Also wrap the updateDesignAgentStatus function with extra debugging
+        const originalUpdateDesignAgentStatus = updateDesignAgentStatus;
+        function updateDesignAgentStatus() {
+            console.log('updateDesignAgentStatus called');
+            console.log('currentSessionId value:', currentSessionId);
+            console.log('currentSessionId type:', typeof currentSessionId);
+            
+            try {
+                originalUpdateDesignAgentStatus();
+            } catch (error) {
+                console.error('Error in updateDesignAgentStatus:', error);
+                console.error('Error stack:', error.stack);
+            }
+        }
+
+        // 3. Add error handler to catch the specific substring error
+        window.addEventListener('error', function(event) {
+            if (event.message.includes('substring is not a function')) {
+                console.error('Substring error caught!');
+                console.error('Error message:', event.message);
+                console.error('Error at:', event.filename, 'line:', event.lineno);
+                console.error('Full error:', event.error);
+            }
+        });
+
+        console.log('Debug code loaded - check console for detailed logs');
+                const API_BASE = 'http://localhost:8000';
+
         // DOM Elements - Shared
         const errorMessage = document.getElementById('errorMessage');
         const successMessage = document.getElementById('successMessage');
@@ -560,7 +603,7 @@
 
         function updateDesignAgentStatus() {
             if (currentSessionId) {
-                currentSessionIdSpan.textContent = currentSessionId.substring(0, 8) + '...';
+                currentSessionIdSpan.textContent = currentSessionId.toString().substring(0, 8) + '...';
                 generateDesignBtn.disabled = false;
             } else {
                 currentSessionIdSpan.textContent = 'None - Start a session in Showroom Agent';
@@ -867,7 +910,7 @@
                                     <h4>${product.name}</h4>
                                     <p><strong>Category:</strong> ${product.category}</p>
                                     <p><strong>Style:</strong> ${product.style || 'N/A'}</p>
-                                    <p><strong>Material:</strong> ${product.material || 'N/A'}</p>
+<p><strong>Material:</strong> ${product.material || 'N/A'}</p>
                                     <p><strong>Quantity:</strong> ${product.quantity || 1}</p>
                                     <p class="price"><strong>Price:</strong> $${product.unit_price || '0'}</p>
                                     ${product.reasoning ? `<p><em>Reasoning:</em> ${product.reasoning}</p>` : ''}
