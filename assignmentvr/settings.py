@@ -66,17 +66,17 @@ CORS_ALLOW_ALL_ORIGINS = True
 CORS_ALLOW_CREDENTIALS = True
 
 
-DATABASES = {
+# DATABASES = {
     
-    'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'assignment',            # your database name
-        'USER': 'postgres',          # your database user (or 'root')
-        'PASSWORD': 'om@123',     # your password
-        'HOST': 'localhost',               # or '127.0.0.1'
-        'PORT': '5432',                    # default MySQL port
-    }
-}
+#     'default': {
+#         'ENGINE': 'django.db.backends.postgresql',
+#         'NAME': 'assignment',            # your database name
+#         'USER': 'postgres',          # your database user (or 'root')
+#         'PASSWORD': 'om@123',     # your password
+#         'HOST': 'localhost',               # or '127.0.0.1'
+#         'PORT': '5432',                    # default MySQL port
+#     }
+# }
 
 # DATABASES = {
 #     'default': {
@@ -90,16 +90,16 @@ DATABASES = {
 # }
 
 
-# DATABASES = {
-#     'default': {
-#         'ENGINE': 'django.db.backends.postgresql',
-#         'NAME': 'postgres',  # Default database name
-#         'USER': 'postgres',
-#         'PASSWORD': 'postgres#1234',
-#         'HOST': 'django-db.c7wakw400mh1.eu-north-1.rds.amazonaws.com',  # You'll get this after creation
-#         'PORT': '5432',
-#     }
-# }
+DATABASES = {
+    'default': {
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': 'postgres',  # Default database name
+        'USER': 'postgres',
+        'PASSWORD': 'postgres#1234',
+        'HOST': 'django-db.c7wakw400mh1.eu-north-1.rds.amazonaws.com',  # You'll get this after creation
+        'PORT': '5432',
+    }
+}
 
 # DATABASES = {
 #     'default': dj_database_url.config(default=os.getenv('DATABASE_URL'))
