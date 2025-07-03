@@ -518,13 +518,14 @@
         Object.defineProperty(window, 'currentSessionId', {
             get: function() {
                 console.log('Getting currentSessionId:', _currentSessionId, 'type:', typeof _currentSessionId);
-                console.trace('Called from:'); // This will show the call stack
-                return _currentSessionId;
+                console.trace('Called from:');
+                // ✅ FIX: Always return as string if it exists
+                return _currentSessionId ? String(_currentSessionId) : _currentSessionId;
             },
             set: function(value) {
                 console.log('Setting currentSessionId to:', value, 'type:', typeof value);
-                console.trace('Set from:'); // This will show the call stack
-                _currentSessionId = value;
+                console.trace('Set from:');
+                _currentSessionId = value; // Store original value
             }
         });
 
@@ -603,7 +604,7 @@
 
         function updateDesignAgentStatus() {
             if (currentSessionId) {
-                currentSessionIdSpan.textContent = currentSessionId.toString().substring(0, 8) + '...';
+                currentSessionIdSpan.textContent = String(currentSessionId).substring(0, 8) + '...';
                 generateDesignBtn.disabled = false;
             } else {
                 currentSessionIdSpan.textContent = 'None - Start a session in Showroom Agent';
@@ -655,8 +656,7 @@
                 const data = await response.json();
                 if (response.ok) {
                     currentSessionId = data.session_id;
-                    sessionStatus.textContent = `Session Active: ${currentSessionId.substring(0, 8)}...`;
-                    
+                    sessionStatus.textContent = `Session Active: ${String(currentSessionId).substring(0, 8)}...`;                    
                     // Enable all controls
                     chatInput.disabled = false;
                     sendChatBtn.disabled = false;
