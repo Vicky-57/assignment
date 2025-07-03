@@ -17,3 +17,4 @@ gunicorn
 dj-database-url 
 whitenoise
 pymysql
+psycopg2-binary

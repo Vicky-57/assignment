@@ -73,16 +73,28 @@ CORS_ALLOW_CREDENTIALS = True
 # Database
 # https://docs.djangoproject.com/en/4.2/ref/settings/#databases
 
+# DATABASES = {
+#     'default': {
+#         'ENGINE': 'django.db.backends.mysql',
+#         'NAME': 'assignment',            # your database name
+#         'USER': 'root',          # your database user (or 'root')
+#         'PASSWORD': 'om@123',     # your password
+#         'HOST': 'localhost',               # or '127.0.0.1'
+#         'PORT': '5432',                    # default MySQL port
+#     }
+# }
+
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.mysql',
-        'NAME': 'assignment',            # your database name
-        'USER': 'root',          # your database user (or 'root')
-        'PASSWORD': 'om@123',     # your password
-        'HOST': 'localhost',               # or '127.0.0.1'
-        'PORT': '3306',                    # default MySQL port
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': 'assignment_fvgi',
+        'USER': 'assignment_fvgi_user',
+        'PASSWORD': 'vjFLc4VVC7Fo92wcZIM1u887LPcugCzJ',
+        'HOST': 'dpg-d18vm6vfte5s73brdrvg-a',
+        'PORT': '5432',
     }
 }
+
 
 # DATABASES = {
 #     'default': dj_database_url.config(default=os.getenv('DATABASE_URL'))
