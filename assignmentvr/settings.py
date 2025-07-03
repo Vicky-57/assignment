@@ -1,4 +1,3 @@
-#import dj_database_url
 from pathlib import Path
 import os
 from dotenv import load_dotenv
@@ -70,8 +69,6 @@ OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
 CORS_ALLOW_ALL_ORIGINS = True
 CORS_ALLOW_CREDENTIALS = True
 
-# Database
-# https://docs.djangoproject.com/en/4.2/ref/settings/#databases
 
 # DATABASES = {
 #     'default': {
@@ -100,9 +97,6 @@ DATABASES = {
 #     'default': dj_database_url.config(default=os.getenv('DATABASE_URL'))
 # }
 
-
-# Password validation
-# https://docs.djangoproject.com/en/4.2/ref/settings/#auth-password-validators
 
 AUTH_PASSWORD_VALIDATORS = [
     {
