@@ -10,9 +10,9 @@ class LayoutTemplate(models.Model):
     dimensions = models.JSONField()  # {"width": 12, "height": 10, "area_sqft": 120}
     product_slots = models.JSONField()  # Detailed slot configuration
     template_description = models.TextField()
-    color_palette = models.CharField(max_length=2000,null=True,blank=True)
-    estimated_budget = models.JSONField()
-    
+    color_palette = models.JSONField(null=True, blank=True, default=list)
+    estimated_budget = models.JSONField(null=True, blank=True, default=dict)
+     
     def __str__(self):
         return f"{self.name} - {self.room_type}"
 
@@ -25,7 +25,6 @@ class DesignRecommendation(models.Model):
         ('rejected', 'Rejected'),
     ]
     
-    #id = models.UUIDField(primary_key=True, default=uuid.uuid4)
     session = models.ForeignKey(UserSession, on_delete=models.CASCADE)
     layout_template = models.ForeignKey(LayoutTemplate, on_delete=models.CASCADE)
     room_dimensions = models.JSONField()
@@ -39,7 +38,7 @@ class DesignRecommendation(models.Model):
 
 class ProductRecommendation(models.Model):
     design = models.ForeignKey(DesignRecommendation, on_delete=models.CASCADE, related_name='product_recommendations')
-    product = models.ForeignKey(Product, on_delete=models.CASCADE)
+    product = models.ForeignKey(Product, on_delete=models.CASCADE,null=True ,blank=True)
     quantity = models.PositiveIntegerField(default=1)
     slot_name = models.CharField(max_length=100)
     reasoning = models.TextField(blank=True)
