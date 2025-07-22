@@ -19,12 +19,9 @@ class Product(models.Model):
     ]
     
     ROOM_TYPE_CHOICES = [
-        ('living_room', 'Living Room'),
-        ('bedroom', 'Bedroom'),
         ('kitchen', 'Kitchen'),
-        ('dining_room', 'Dining Room'),
         ('bathroom', 'Bathroom'),
-        ('office', 'Office'),
+
     ]
     
     #id = models.UUIDField(primary_key=True, default=uuid.uuid4)

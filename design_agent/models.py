@@ -1,14 +1,14 @@
 from django.db import models
 from products.models import Product
 from showroom_agent.models import UserSession
-import uuid
 
 class LayoutTemplate(models.Model):
     name = models.CharField(max_length=100)
     room_type = models.CharField(max_length=50)
     style = models.CharField(max_length=50)
-    dimensions = models.JSONField()  # {"width": 12, "height": 10, "area_sqft": 120}
-    product_slots = models.JSONField()  # Detailed slot configuration
+    image = models.ImageField(upload_to='layout_templates/', null=True, blank=True)
+    dimensions = models.JSONField()  
+    product_slots = models.JSONField()  
     template_description = models.TextField()
     color_palette = models.JSONField(null=True, blank=True, default=list)
     estimated_budget = models.JSONField(null=True, blank=True, default=dict)

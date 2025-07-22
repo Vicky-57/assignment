@@ -17,7 +17,8 @@ class GenerateDesignView(APIView):
         session_id = request.data.get('session_id')
         room_dimensions = request.data.get('room_dimensions')  # Optional
         budget_range = request.data.get('budget_range')  # Optional: {'min': 2000, 'max': 5000}
-        
+        print("ROOM DIMENSIONS VALUE:", room_dimensions)
+
         if not session_id:
             return Response(
                 {'error': 'session_id is required'}, 
@@ -127,6 +128,7 @@ class DesignDetailsView(APIView):
                     'name': design.layout_template.name,
                     'room_type': design.layout_template.room_type,
                     'style': design.layout_template.style,
+                    'image': design.layout_template.image.url,
                     'description': design.layout_template.template_description,
                     'color_palette': getattr(design.layout_template, 'color_palette', []),
                     'estimated_budget': getattr(design.layout_template, 'estimated_budget', {}),
@@ -212,6 +214,7 @@ class TemplatesView(APIView):
         for template in templates:
             template_data.append({
                 'id': template.id,
+                'image':template.image.url,
                 'name': template.name,
                 'room_type': template.room_type,
                 'style': template.style,
@@ -221,3 +224,4 @@ class TemplatesView(APIView):
             })
         
         return Response({'templates': template_data})
+

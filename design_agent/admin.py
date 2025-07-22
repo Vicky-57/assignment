@@ -1,3 +1,6 @@
 from django.contrib import admin
+from .models import LayoutTemplate
 
-# Register your models here.
+
+admin.site.register(LayoutTemplate)
+
