@@ -458,7 +458,8 @@
                 <div class="card">
                     <h2 class="section-title">🎨 Generate Design</h2>
                     <div class="input-group">
-                        <input type="text" class="input-field" id="roomDimensions" placeholder="Room Dimensions (e.g., 12x10x8)">
+                        <input type="text" class="input-field" id="roomDimensions" placeholder="Dimensions (e.g., 12x10x8)">
+                        <input type="number" class="input-field" id="generateBudget" placeholder="Budget" min="1">
                     </div>
                     <button class="btn btn-primary" id="generateDesignBtn" disabled>Generate Design Recommendation</button>
                     
@@ -928,11 +929,17 @@
                 return;
             }
             const roomDimensions = document.getElementById('roomDimensions').value.trim();
+            const budget = document.getElementById('generateBudget').value;
+            if (!budget) {
+                showError('Please enter a budget for the design.');
+                return;
+            }
             showLoading();
             try {
                 const requestBody = {
                     session_id: currentSessionId,
-                    layout_template_id: window.selectedTemplateId
+                    layout_template_id: window.selectedTemplateId,
+                    budget: budget
                 };
                 if (roomDimensions) {
                     requestBody.room_dimensions = roomDimensions;
@@ -951,17 +958,36 @@
                     let html = `
                         <h4>Design Generated Successfully! 🎉</h4>
                         <p><strong>Design ID:</strong> ${data.design_id || 'N/A'}</p>
-                        <p><strong>Template:</strong> ${data.template_name || 'N/A'}</p>
+                        <p><strong>Template:</strong> ${data.template || data.name || 'N/A'}</p>
                         <p><strong>Room Type:</strong> ${data.room_type || 'N/A'}</p>
                         <p><strong>Style:</strong> ${data.style || 'N/A'}</p>
-                        <p><strong>Total Cost:</strong> $${data.total_cost || '0'}</p>
+                        <p><strong>Dimensions:</strong> ${data.dimensions ? `${data.dimensions.length || '?'}' × ${data.dimensions.width || '?'}' × ${data.dimensions.height || '?'}'` : 'N/A'}</p>
+                        <p><strong>Material Cost:</strong> $${data.material_cost?.toLocaleString() || 'N/A'}</p>
+                        <p><strong>Labor Cost:</strong> $${data.labor_cost?.toLocaleString() || 'N/A'}</p>
+                        <p><strong>Total Cost:</strong> $${data.total_cost?.toLocaleString() || 'N/A'}</p>
+                        <p><strong>Budget Used:</strong> $${data.budget_used?.toLocaleString() || 'N/A'}</p>
+                        <p><strong>Budget Utilization:</strong> ${data.budget_utilization ? data.budget_utilization + '%' : 'N/A'}</p>
                         <p><strong>Status:</strong> ${data.status || 'N/A'}</p>
                     `;
                     if (data.ai_reasoning) {
-                        html += `<p><strong>AI Reasoning:</strong> ${data.ai_reasoning}</p>`;
+                        html += `<div style="margin: 18px 0 10px 0;"><strong>AI Reasoning:</strong><br><span style='font-size: 15px;'>${data.ai_reasoning}</span></div>`;
+                    }
+                    if (data.design_features && data.design_features.length > 0) {
+                        html += `<div style='margin: 10px 0;'><strong>Design Features:</strong><ul style='margin: 0 0 0 18px;'>`;
+                        data.design_features.forEach(f => {
+                            html += `<li>${f}</li>`;
+                        });
+                        html += `</ul></div>`;
+                    }
+                    if (data.cost_breakdown && data.cost_breakdown.categories) {
+                        html += `<div style='margin: 18px 0 10px 0;'><strong>Cost Breakdown:</strong><table style='width:100%; border-collapse:collapse; margin-top:8px;'><thead><tr><th style='text-align:left;'>Category</th><th style='text-align:right;'>Subtotal</th></tr></thead><tbody>`;
+                        Object.entries(data.cost_breakdown.categories).forEach(([cat, val]) => {
+                            html += `<tr><td style='padding:4px 0;'>${cat}</td><td style='text-align:right;'>$${val.subtotal.toLocaleString()}</td></tr>`;
+                        });
+                        html += `</tbody></table></div>`;
                     }
                     if (data.products && data.products.length > 0) {
-                        html += '<h5>Recommended Products:</h5><div class="product-list">';
+                        html += '<h5 style="margin-top:18px;">Recommended Products:</h5><div class="product-list">';
                         data.products.forEach(product => {
                             html += `
                                 <div class="product-item">
@@ -976,6 +1002,9 @@
                             `;
                         });
                         html += '</div>';
+                    }
+                    if (data.session_preferences) {
+                        html += `<div style='margin: 18px 0 10px 0;'><strong>Session Preferences:</strong><pre style='background:#f7fafc; border-radius:8px; padding:8px;'>${JSON.stringify(data.session_preferences, null, 2)}</pre></div>`;
                     }
                     contentDiv.innerHTML = html;
                     designResultDiv.classList.add('show');

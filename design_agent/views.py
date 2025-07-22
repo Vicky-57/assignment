@@ -16,7 +16,7 @@ class GenerateDesignView(APIView):
         """Generate enhanced design recommendation"""
         session_id = request.data.get('session_id')
         room_dimensions = request.data.get('room_dimensions')  # Optional
-        budget_range = request.data.get('budget_range')  # Optional: {'min': 2000, 'max': 5000}
+        budget = request.data.get('budget')  # Now a single value
         layout_template_id = request.data.get('layout_template_id')  # New: Optional/Required
         print("ROOM DIMENSIONS VALUE:", room_dimensions)
 
@@ -28,6 +28,11 @@ class GenerateDesignView(APIView):
         if not layout_template_id:
             return Response(
                 {'error': 'layout_template_id is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        if not budget:
+            return Response(
+                {'error': 'budget is required'},
                 status=status.HTTP_400_BAD_REQUEST
             )
         try:
@@ -47,7 +52,7 @@ class GenerateDesignView(APIView):
             result = design_service.generate_design_recommendation(
                 session_id, 
                 room_dimensions,
-                budget_range,
+                budget,
                 layout_template_id=layout_template_id
             )
             if 'error' in result:
@@ -125,7 +130,15 @@ class DesignDetailsView(APIView):
             total_items = sum(prod_rec.quantity for prod_rec in design.product_recommendations.all())
             avg_item_cost = float(design.total_cost) / total_items if total_items > 0 else 0
             try:
-                room_dimensions = json.loads(design.room_dimensions) if isinstance(design.room_dimensions, str) else design.room_dimensions
+                if isinstance(design.room_dimensions, str):
+                    try:
+                        room_dimensions = json.loads(design.room_dimensions)
+                    except Exception:
+                        room_dimensions = {}
+                elif isinstance(design.room_dimensions, dict):
+                    room_dimensions = design.room_dimensions
+                else:
+                    room_dimensions = {}
             except Exception:
                 room_dimensions = {}
             # Build response
@@ -143,7 +156,7 @@ class DesignDetailsView(APIView):
                 },
                 'room_details': {
                     'dimensions': room_dimensions,
-                    'area_sqft': room_dimensions.get('area_sqft', 0),
+                    'area_sqft': room_dimensions.get('area_sqft', 0) if isinstance(room_dimensions, dict) else 0,
                 },
                 'user_preferences': design.user_preferences,
                 'ai_reasoning': design.ai_reasoning,
@@ -152,7 +165,7 @@ class DesignDetailsView(APIView):
                     'total_items': total_items,
                     'average_item_cost': round(avg_item_cost, 2),
                     'category_breakdown': category_totals,
-                    'cost_per_sqft': round(float(design.total_cost) / max(design.room_dimensions.get('area_sqft', 1), 1), 2)
+                    'cost_per_sqft': round(float(design.total_cost) / max(room_dimensions.get('area_sqft', 1) if isinstance(room_dimensions, dict) else 1, 1), 2)
                 },
                 'products': product_details,
                 'status': design.status,
@@ -184,7 +197,7 @@ class ExportPDFView(APIView):
     def get(self, request, design_id):
         """Export design as enhanced PDF"""
         try:
-            # Verify design exists
+
             design = DesignRecommendation.objects.get(id=design_id)
             
             design_service = DesignAIService()

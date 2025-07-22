@@ -12,6 +12,7 @@ import pandas as pd
 from products.models import Product
 from showroom_agent.models import UserSession
 from .models import LayoutTemplate, DesignRecommendation, ProductRecommendation
+from datetime import datetime
 
 openai.api_key = settings.OPENAI_API_KEY
 
@@ -120,14 +121,13 @@ class DesignAIService:
         return LayoutTemplate.objects.filter(room_type__in=['kitchen', 'bathroom'])
     
     def generate_design_recommendation(self, session_id, room_dimensions=None, budget=None, layout_template_id=None):
-        """Generate design recommendation with single budget value"""
+        """Generate design recommendation maximizing the budget utilization."""
         try:
             session = UserSession.objects.get(id=session_id)
             preferences = session.preferences
-            # Handle budget - use single value instead of min/max
-            if isinstance(budget, dict) and 'max' in budget:
-                total_budget = float(budget['max'])
-            elif isinstance(budget, (int, float)):
+            
+            # Handle budget - use single value and ensure full utilization
+            if budget is not None:
                 total_budget = float(budget)
             else:
                 # Use default based on room type
@@ -141,6 +141,7 @@ class DesignAIService:
                 template = self._select_template(preferences)
             if not template:
                 return {'error': 'No suitable template found for your preferences'}
+                
             # Handle product_slots format
             if isinstance(template.product_slots, list):
                 product_slots_dict = {}
@@ -154,10 +155,17 @@ class DesignAIService:
                 product_slots_dict = template.product_slots
             else:
                 return {'error': 'Invalid product_slots format in template'}
+                
             # Use provided dimensions or template defaults
             dimensions = room_dimensions or template.dimensions
+            
+            # Calculate labor cost (15% of material cost)
+            material_budget = total_budget * 0.85  # 85% for materials
+            labor_cost = total_budget * 0.15       # 15% for labor
+            
             # Generate AI reasoning for the design
             ai_reasoning = self._generate_design_reasoning(preferences, template, dimensions, total_budget)
+            
             # Create design recommendation
             design = DesignRecommendation.objects.create(
                 session=session,
@@ -167,57 +175,18 @@ class DesignAIService:
                 ai_reasoning=ai_reasoning,
                 status='generated'
             )
-            # Generate product recommendations for each slot
-            total_cost = 0
-            product_recommendations = []
-            for slot_name, slot_info in product_slots_dict.items():
-                budget_percent = slot_info.get('budget_percentage', 10)
-                slot_budget = total_budget * budget_percent / 100
-                slot = {
-                    'name': slot_name,
-                    'category': slot_info.get('category'),
-                    'quantity': slot_info.get('quantity', 1),
-                    'max_budget': slot_budget
-                }
-                products = self._recommend_products_for_slot(slot, preferences, slot_budget)
-                for product_data in products:
-                    try:
-                        product = Product.objects.get(id=product_data['product_id'])
-                        quantity = product_data['quantity']
-                        unit_price = product.price
-                        total_price = unit_price * quantity
-                        product_rec = ProductRecommendation.objects.create(
-                            design=design,
-                            product=product,
-                            quantity=quantity,
-                            slot_name=slot['name'],
-                            reasoning=product_data['reasoning'],
-                            unit_price=unit_price,
-                            total_price=total_price
-                        )
-                        product_recommendations.append(product_rec)
-                        total_cost += total_price
-                    except Product.DoesNotExist:
-                        print(f"Product with ID {product_data['product_id']} not found")
-                        continue
-            # If no products found, use fallback products
-            if total_cost == 0:
-                print("No products found, using fallback...")
-                fallback_products = self._create_fallback_products(template, total_budget)
-                for product_data in fallback_products:
-                    product_rec = ProductRecommendation.objects.create(
-                        design=design,
-                        product_id=None,
-                        quantity=product_data['quantity'],
-                        slot_name=product_data['slot_name'],
-                        reasoning=product_data['reasoning'],
-                        unit_price=product_data['unit_price'],
-                        total_price=product_data['total_price']
-                    )
-                    product_recommendations.append(product_rec)
-                    total_cost += product_data['total_price']
             
-            design.total_cost = total_cost
+            # Generate product recommendations for each slot with full budget utilization
+            product_recommendations = self._generate_optimized_products(
+                design, product_slots_dict, preferences, material_budget
+            )
+            
+            # Calculate totals
+            material_cost = sum(float(prod.total_price) for prod in product_recommendations)
+            total_project_cost = material_cost + labor_cost
+            
+            # Update design with costs
+            design.total_cost = total_project_cost
             design.save()
             
             return {
@@ -226,12 +195,15 @@ class DesignAIService:
                 'room_type': template.room_type,
                 'style': template.style,
                 'dimensions': dimensions,
-                'total_cost': float(total_cost),
+                'material_cost': float(material_cost),
+                'labor_cost': float(labor_cost),
+                'total_cost': float(total_project_cost),
                 'budget_used': float(total_budget),
+                'budget_utilization': round((total_project_cost / total_budget) * 100, 1),
                 'color_palette': getattr(template, 'color_palette', []),
                 'ai_reasoning': ai_reasoning,
                 'product_count': len(product_recommendations),
-                'cost_breakdown': self._generate_cost_breakdown(product_recommendations),
+                'cost_breakdown': self._generate_enhanced_cost_breakdown(product_recommendations, labor_cost),
                 'design_features': self._generate_design_features(template, preferences),
                 'status': 'success'
             }
@@ -242,78 +214,493 @@ class DesignAIService:
             traceback.print_exc()
             return {'error': f'Design generation failed: {str(e)}'}
 
-    def _create_fallback_products(self, template, total_budget):
-        """Create fallback products for kitchen and bathroom"""
-        fallback_products = []
+    def _generate_optimized_products(self, design, product_slots_dict, preferences, material_budget):
+        """Generate products that fully utilize the material budget to match user expectations"""
+        product_recommendations = []
         
-        # Kitchen and bathroom specific products
-        sample_products = {
+        slot_budgets = {}
+        total_percentage = sum(slot_info.get('budget_percentage', 10) for slot_info in product_slots_dict.values())
+        
+        # Normalize percentages if they don't add up to 100
+        if total_percentage != 100:
+            for slot_name, slot_info in product_slots_dict.items():
+                slot_budgets[slot_name] = material_budget * (slot_info.get('budget_percentage', 10) / total_percentage)
+        else:
+            for slot_name, slot_info in product_slots_dict.items():
+                slot_budgets[slot_name] = material_budget * slot_info.get('budget_percentage', 10) / 100
+        
+        total_allocated = 0.0
+        
+        # First pass: Create products for each slot
+        for slot_name, slot_info in product_slots_dict.items():
+            slot_budget = slot_budgets[slot_name]
+            quantity = slot_info.get('quantity', 1)
+            
+            # Try to find real products first
+            products = self._recommend_products_for_slot({
+                'name': slot_name,
+                'category': slot_info.get('category'),
+                'quantity': quantity,
+                'max_budget': slot_budget
+            }, preferences, slot_budget)
+            
+            product_created = False
+            
+            # Use real product if available and within budget range
+            if products:
+                for product_data in products:
+                    try:
+                        product = Product.objects.get(id=product_data['product_id'])
+                        unit_price = float(product.price)
+                        total_price = unit_price * quantity
+                        
+                        # Accept products that use 50-150% of slot budget for better utilization
+                        if total_price <= slot_budget * 1.5:
+                            product_rec = ProductRecommendation.objects.create(
+                                design=design,
+                                product=product,
+                                quantity=quantity,
+                                slot_name=slot_name,
+                                reasoning=product_data['reasoning'],
+                                unit_price=unit_price,
+                                total_price=total_price
+                            )
+                            product_recommendations.append(product_rec)
+                            total_allocated += total_price
+                            product_created = True
+                            break
+                    except Product.DoesNotExist:
+                        continue
+            
+            # If no suitable real product found, create AI-generated product that uses the full slot budget
+            if not product_created:
+                ai_product = self._create_budget_maximizing_product(
+                    slot_name, slot_info, slot_budget, material_budget
+                )
+                
+                product_rec = ProductRecommendation.objects.create(
+                    design=design,
+                    product=None,
+                    quantity=ai_product['quantity'],
+                    slot_name=slot_name,
+                    reasoning=ai_product['reasoning'],
+                    unit_price=ai_product['unit_price'],
+                    total_price=ai_product['total_price']
+                )
+                product_recommendations.append(product_rec)
+                total_allocated += ai_product['total_price']
+        
+        # Second pass: Ensure we're close to the material budget
+        remaining_budget = material_budget - total_allocated
+        
+        # If we're significantly under budget, upgrade products proportionally
+        if remaining_budget > material_budget * 0.05:  # If more than 5% remains
+            self._redistribute_remaining_budget(product_recommendations, remaining_budget)
+        
+        # If we're over budget, scale down proportionally
+        elif total_allocated > material_budget * 1.02:  # If more than 2% over
+            self._scale_down_to_budget(product_recommendations, material_budget)
+        
+        return product_recommendations
+    
+    def _create_budget_maximizing_product(self, slot_name, slot_info, slot_budget, total_material_budget):
+        """Create AI product that utilizes 90-95% of the allocated slot budget"""
+        
+        # Enhanced product database with realistic premium pricing
+        premium_products = {
             # Kitchen products
-            'kitchen_cabinet': {'name': 'Modern Kitchen Cabinets', 'price_range': (1500, 4000)},
-            'kitchen_island': {'name': 'Kitchen Island with Storage', 'price_range': (800, 2500)},
-            'bar_stools': {'name': 'Kitchen Bar Stool', 'price_range': (80, 250)},
-            'pendant_lights': {'name': 'Kitchen Pendant Light', 'price_range': (100, 300)},
-            'kitchen_appliances': {'name': 'Kitchen Appliance Package', 'price_range': (500, 1500)},
-            'wooden_cabinets': {'name': 'Traditional Wood Cabinets', 'price_range': (2000, 5000)},
-            'dining_table': {'name': 'Kitchen Dining Table', 'price_range': (400, 1200)},
-            'dining_chairs': {'name': 'Kitchen Dining Chair', 'price_range': (100, 400)},
-            'chandelier': {'name': 'Kitchen Chandelier', 'price_range': (200, 800)},
+            'kitchen_cabinet': {
+                'name': 'Premium Modular Kitchen Cabinet System',
+                'base_price': 2000,
+                'scaling_factor': 1.5
+            },
+            'modular_cabinets': {
+                'name': 'Custom Modular Kitchen Cabinets',
+                'base_price': 2000,
+                'scaling_factor': 1.5
+            },
+            'kitchen_island': {
+                'name': 'Designer Kitchen Island with Storage',
+                'base_price': 1500,
+                'scaling_factor': 1.8
+            },
+            'bar_stools': {
+                'name': 'Premium Bar Stool',
+                'base_price': 300,
+                'scaling_factor': 2.0
+            },
+            'pendant_lights': {
+                'name': 'Designer Pendant Light Fixture',
+                'base_price': 250,
+                'scaling_factor': 2.5
+            },
+            'kitchen_appliances': {
+                'name': 'Premium Kitchen Appliance Package',
+                'base_price': 1200,
+                'scaling_factor': 1.8
+            },
+            'hob': {
+                'name': 'Premium Gas Hob with Auto-Ignition',
+                'base_price': 500,
+                'scaling_factor': 2.0
+            },
+            'sink': {
+                'name': 'Premium Stainless Steel Kitchen Sink',
+                'base_price': 400,
+                'scaling_factor': 2.5
+            },
+            'chimney': {
+                'name': 'High-Performance Kitchen Chimney',
+                'base_price': 600,
+                'scaling_factor': 2.0
+            },
+            'lighting': {
+                'name': 'LED Kitchen Lighting System',
+                'base_price': 400,
+                'scaling_factor': 1.8
+            },
+            'countertop': {
+                'name': 'Premium Granite/Quartz Countertop',
+                'base_price': 800,
+                'scaling_factor': 2.2
+            },
             
             # Bathroom products
-            'vanity_cabinet': {'name': 'Bathroom Vanity Cabinet', 'price_range': (500, 1800)},
-            'double_vanity': {'name': 'Double Sink Vanity', 'price_range': (1200, 3500)},
-            'mirror': {'name': 'Bathroom Mirror', 'price_range': (150, 600)},
-            'luxury_mirror': {'name': 'Luxury Bathroom Mirror', 'price_range': (300, 1000)},
-            'shower_fixtures': {'name': 'Shower Fixture Set', 'price_range': (400, 1500)},
-            'premium_fixtures': {'name': 'Premium Bathroom Fixtures', 'price_range': (1500, 4000)},
-            'bathroom_lighting': {'name': 'Bathroom Light Fixture', 'price_range': (80, 300)},
-            'luxury_lighting': {'name': 'Luxury Bathroom Lighting', 'price_range': (200, 600)},
-            'storage_shelves': {'name': 'Bathroom Storage Shelf', 'price_range': (100, 400)},
-            'towel_warmer': {'name': 'Electric Towel Warmer', 'price_range': (200, 800)},
+            'vanity_cabinet': {
+                'name': 'Premium Bathroom Vanity with Sink',
+                'base_price': 1000,
+                'scaling_factor': 1.8
+            },
+            'double_vanity': {
+                'name': 'Luxury Double Sink Vanity Unit',
+                'base_price': 2000,
+                'scaling_factor': 1.6
+            },
+            'mirror': {
+                'name': 'Smart LED Bathroom Mirror',
+                'base_price': 400,
+                'scaling_factor': 2.0
+            },
+            'luxury_mirror': {
+                'name': 'Premium Smart Mirror with Touch Controls',
+                'base_price': 800,
+                'scaling_factor': 1.8
+            },
+            'shower_fixtures': {
+                'name': 'Premium Shower System with Fixtures',
+                'base_price': 800,
+                'scaling_factor': 2.0
+            },
+            'premium_fixtures': {
+                'name': 'Luxury Rain Shower System',
+                'base_price': 1500,
+                'scaling_factor': 1.8
+            },
+            'bathroom_lighting': {
+                'name': 'Premium LED Bathroom Lighting',
+                'base_price': 200,
+                'scaling_factor': 2.5
+            },
+            'luxury_lighting': {
+                'name': 'Designer Bathroom Light Collection',
+                'base_price': 400,
+                'scaling_factor': 2.0
+            },
+            'storage_shelves': {
+                'name': 'Premium Bathroom Storage System',
+                'base_price': 300,
+                'scaling_factor': 1.8
+            },
+            'towel_warmer': {
+                'name': 'Electric Heated Towel Warmer Rack',
+                'base_price': 400,
+                'scaling_factor': 2.0
+            },
         }
         
-        # Handle product_slots format
-        if isinstance(template.product_slots, list):
-            product_slots_dict = {}
-            for i, slot in enumerate(template.product_slots):
-                if isinstance(slot, dict):
-                    slot_name = slot.get('name', f'slot_{i}')
-                    product_slots_dict[slot_name] = slot
-        else:
-            product_slots_dict = template.product_slots
+        quantity = slot_info.get('quantity', 1)
         
-        for slot_name, slot_info in product_slots_dict.items():
-            quantity = slot_info.get('quantity', 1)
-            budget_percentage = slot_info.get('budget_percentage', 10)
-            slot_budget = total_budget * budget_percentage / 100
-                    
-            # Get sample product or create generic one
-            if slot_name in sample_products:
-                product_info = sample_products[slot_name]
-                price_range = product_info['price_range']
-                unit_price = min(slot_budget / quantity, random.uniform(*price_range))
-            else:
-                product_info = {'name': f'{slot_name.replace("_", " ").title()}'}
-                unit_price = slot_budget / quantity
+        # Target 90-95% of slot budget utilization
+        target_total = slot_budget * 0.92  # Use 92% of allocated budget
+        target_unit_price = target_total / quantity
+        
+        # Get product info or create generic
+        if slot_name in premium_products:
+            product_info = premium_products[slot_name]
+            base_price = product_info['base_price']
+            scaling_factor = product_info['scaling_factor']
             
-            fallback_products.append({
-                'slot_name': slot_name,
-                'name': product_info['name'],
-                'quantity': quantity,
-                'unit_price': round(unit_price, 2),
-                'total_price': round(unit_price * quantity, 2),
-                'reasoning': f"Selected {product_info['name']} to complete the {template.style} {template.room_type} design within budget."
-            })
+            # Scale price based on available budget
+            if target_unit_price > base_price:
+                unit_price = min(target_unit_price, base_price * scaling_factor)
+            else:
+                unit_price = max(target_unit_price, base_price * 0.7)  # Minimum 70% of base
+            
+            name = product_info['name']
+        else:
+            # Generic premium product
+            unit_price = target_unit_price
+            name = f'Premium {slot_name.replace("_", " ").title()}'
         
-        return fallback_products
+        total_price = unit_price * quantity
+        
+        return {
+            'name': name,
+            'quantity': quantity,
+            'unit_price': round(unit_price, 2),
+            'total_price': round(total_price, 2),
+            'reasoning': f"Selected {name} with premium materials and finishes to maximize your investment while ensuring exceptional quality and durability. This selection utilizes your allocated budget effectively for optimal value."
+        }
     
+    def _redistribute_remaining_budget(self, product_recommendations, remaining_budget):
+        """Redistribute remaining budget proportionally across all products"""
+        if not product_recommendations or remaining_budget <= 0:
+            return
+        
+        total_current_cost = sum(prod.total_price for prod in product_recommendations)
+        
+        for prod_rec in product_recommendations:
+            # Calculate proportional upgrade
+            proportion = prod_rec.total_price / total_current_cost if total_current_cost > 0 else 0
+            upgrade_amount = remaining_budget * proportion
+            
+            # Apply upgrade
+            new_unit_price = prod_rec.unit_price + (upgrade_amount / prod_rec.quantity)
+            new_total_price = new_unit_price * prod_rec.quantity
+            
+            prod_rec.unit_price = round(new_unit_price, 2)
+            prod_rec.total_price = round(new_total_price, 2)
+            prod_rec.reasoning += " Enhanced with premium upgrades to fully utilize your budget allocation."
+            prod_rec.save()
+    
+    def _scale_down_to_budget(self, product_recommendations, target_budget):
+        """Scale down all products proportionally to fit within budget"""
+        if not product_recommendations:
+            return
+            
+        total_current_cost = sum(prod.total_price for prod in product_recommendations)
+        scale_factor = target_budget / total_current_cost if total_current_cost > 0 else 1
+        
+        for prod_rec in product_recommendations:
+            new_total_price = prod_rec.total_price * scale_factor
+            new_unit_price = new_total_price / prod_rec.quantity
+            
+            prod_rec.unit_price = round(new_unit_price, 2)
+            prod_rec.total_price = round(new_total_price, 2)
+            prod_rec.save()
+
+    def _create_smart_fallback_product(self, slot_name, slot_info, slot_budget, total_budget):
+        """Create intelligent fallback products with realistic pricing"""
+        
+        # Enhanced product database with realistic pricing
+        enhanced_products = {
+            # Kitchen products with premium options
+            'kitchen_cabinet': {
+                'name': 'Premium Modular Kitchen Cabinets',
+                'base_price': 1500,
+                'price_multiplier': lambda budget: min(3.5, max(1.0, budget / 2000))
+            },
+            'modular_cabinets': {
+                'name': 'Premium Modular Kitchen Cabinets',
+                'base_price': 1500,
+                'price_multiplier': lambda budget: min(3.5, max(1.0, budget / 2000))
+            },
+            'kitchen_island': {
+                'name': 'Kitchen Island with Premium Countertop',
+                'base_price': 800,
+                'price_multiplier': lambda budget: min(4.0, max(1.0, budget / 1500))
+            },
+            'bar_stools': {
+                'name': 'Designer Bar Stool',
+                'base_price': 150,
+                'price_multiplier': lambda budget: min(2.5, max(1.0, budget / 200))
+            },
+            'pendant_lights': {
+                'name': 'Designer Pendant Light',
+                'base_price': 120,
+                'price_multiplier': lambda budget: min(3.0, max(1.0, budget / 180))
+            },
+            'kitchen_appliances': {
+                'name': 'Premium Kitchen Appliance Package',
+                'base_price': 800,
+                'price_multiplier': lambda budget: min(2.5, max(1.0, budget / 1000))
+            },
+            'hob': {
+                'name': 'Premium Gas Hob with Auto Ignition',
+                'base_price': 300,
+                'price_multiplier': lambda budget: min(4.0, max(1.0, budget / 500))
+            },
+            'sink': {
+                'name': 'Premium Stainless Steel Kitchen Sink',
+                'base_price': 200,
+                'price_multiplier': lambda budget: min(3.0, max(1.0, budget / 400))
+            },
+            'chimney': {
+                'name': 'High-Efficiency Kitchen Chimney',
+                'base_price': 400,
+                'price_multiplier': lambda budget: min(3.5, max(1.0, budget / 600))
+            },
+            'lighting': {
+                'name': 'LED Kitchen Lighting System',
+                'base_price': 250,
+                'price_multiplier': lambda budget: min(2.5, max(1.0, budget / 400))
+            },
+            'countertop': {
+                'name': 'Premium Granite/Quartz Countertop',
+                'base_price': 400,
+                'price_multiplier': lambda budget: min(4.0, max(1.0, budget / 800))
+            },
+            
+            # Bathroom products with premium options
+            'vanity_cabinet': {
+                'name': 'Premium Bathroom Vanity Cabinet',
+                'base_price': 600,
+                'price_multiplier': lambda budget: min(3.0, max(1.0, budget / 1000))
+            },
+            'double_vanity': {
+                'name': 'Premium Double Sink Vanity',
+                'base_price': 1200,
+                'price_multiplier': lambda budget: min(3.0, max(1.0, budget / 2000))
+            },
+            'mirror': {
+                'name': 'Premium LED Bathroom Mirror',
+                'base_price': 200,
+                'price_multiplier': lambda budget: min(2.5, max(1.0, budget / 350))
+            },
+            'luxury_mirror': {
+                'name': 'Smart LED Mirror with Touch Controls',
+                'base_price': 400,
+                'price_multiplier': lambda budget: min(2.5, max(1.0, budget / 600))
+            },
+            'shower_fixtures': {
+                'name': 'Premium Shower Fixture Set',
+                'base_price': 500,
+                'price_multiplier': lambda budget: min(3.0, max(1.0, budget / 800))
+            },
+            'premium_fixtures': {
+                'name': 'Luxury Rain Shower System',
+                'base_price': 1200,
+                'price_multiplier': lambda budget: min(3.5, max(1.0, budget / 2000))
+            },
+            'bathroom_lighting': {
+                'name': 'LED Bathroom Light Fixture',
+                'base_price': 100,
+                'price_multiplier': lambda budget: min(2.5, max(1.0, budget / 200))
+            },
+            'luxury_lighting': {
+                'name': 'Designer Bathroom Lighting',
+                'base_price': 200,
+                'price_multiplier': lambda budget: min(3.0, max(1.0, budget / 400))
+            },
+            'storage_shelves': {
+                'name': 'Premium Bathroom Storage Shelf',
+                'base_price': 150,
+                'price_multiplier': lambda budget: min(2.0, max(1.0, budget / 250))
+            },
+            'towel_warmer': {
+                'name': 'Electric Heated Towel Warmer',
+                'base_price': 250,
+                'price_multiplier': lambda budget: min(3.0, max(1.0, budget / 500))
+            },
+        }
+        
+        quantity = slot_info.get('quantity', 1)
+        
+        # Get product info or create generic
+        if slot_name in enhanced_products:
+            product_info = enhanced_products[slot_name]
+            base_price = product_info['base_price']
+            multiplier = product_info['price_multiplier'](slot_budget)
+            unit_price = base_price * multiplier
+            name = product_info['name']
+        else:
+            # Generic product
+            unit_price = slot_budget / quantity * 0.9  # Use 90% of budget for buffer
+            name = f'Premium {slot_name.replace("_", " ").title()}'
+        
+        # Ensure we use most of the allocated budget
+        target_total = slot_budget * 0.95  # Use 95% of allocated budget
+        unit_price = max(unit_price, target_total / quantity)
+        total_price = unit_price * quantity
+        
+        return {
+            'name': name,
+            'quantity': quantity,
+            'unit_price': round(unit_price, 2),
+            'total_price': round(total_price, 2),
+            'reasoning': f"Selected {name} with premium features and quality materials to maximize your budget allocation while ensuring excellent value and durability."
+        }
+
+    def _generate_enhanced_cost_breakdown(self, product_recommendations, labor_cost):
+        """Generate enhanced cost breakdown including labor"""
+        breakdown = {}
+        material_total = 0
+        
+        # Group by category
+        for prod_rec in product_recommendations:
+            if prod_rec.product and hasattr(prod_rec.product, 'category'):
+                category_name = prod_rec.product.category.name
+            else:
+                # Categorize based on slot name
+                slot_name = prod_rec.slot_name.lower()
+                if 'cabinet' in slot_name or 'storage' in slot_name or 'vanity' in slot_name:
+                    category_name = 'Storage & Cabinetry'
+                elif 'light' in slot_name or 'chandelier' in slot_name:
+                    category_name = 'Lighting'
+                elif 'fixture' in slot_name or 'shower' in slot_name or 'faucet' in slot_name:
+                    category_name = 'Fixtures'
+                elif 'appliance' in slot_name or 'hob' in slot_name or 'chimney' in slot_name:
+                    category_name = 'Appliances'
+                elif 'stool' in slot_name or 'chair' in slot_name:
+                    category_name = 'Seating'
+                elif 'countertop' in slot_name or 'surface' in slot_name:
+                    category_name = 'Surfaces'
+                else:
+                    category_name = 'Accessories'
+            
+            if category_name not in breakdown:
+                breakdown[category_name] = {'items': [], 'subtotal': 0}
+            
+            item_name = prod_rec.product.name if prod_rec.product else f"{prod_rec.slot_name.replace('_', ' ').title()}"
+            
+            item_info = {
+                'name': item_name,
+                'quantity': prod_rec.quantity,
+                'unit_price': float(prod_rec.unit_price),
+                'total_price': float(prod_rec.total_price)
+            }
+            
+            breakdown[category_name]['items'].append(item_info)
+            breakdown[category_name]['subtotal'] += float(prod_rec.total_price)
+            material_total += float(prod_rec.total_price)
+        
+        # Add labor cost as separate category
+        breakdown['Labor & Installation'] = {
+            'items': [
+                {
+                    'name': 'Professional Installation & Labor',
+                    'quantity': 1,
+                    'unit_price': float(labor_cost),
+                    'total_price': float(labor_cost)
+                }
+            ],
+            'subtotal': float(labor_cost)
+        }
+        
+        return {
+            'categories': breakdown,
+            'material_total': material_total,
+            'labor_total': float(labor_cost),
+            'grand_total': material_total + float(labor_cost)
+        }
+
     def _recommend_products_for_slot(self, slot, preferences, slot_budget):
         """Recommend products for kitchen and bathroom slots"""
         try:
             products = Product.objects.filter(is_available=True)
             
             # Apply category filter for kitchen and bathroom
-            category_keywords = slot['category'].lower()
+            category_keywords = slot['category'].lower() if slot.get('category') else ''
             if 'storage' in category_keywords:
                 products = products.filter(
                     category__name__iregex=r'(cabinet|storage|vanity|shelf)'
@@ -343,9 +730,9 @@ class DesignAIService:
                     category__name__iregex=r'(mirror|accessory|towel|hardware)'
                 )
             
-            # Apply budget filter
+            # Apply budget filter with higher tolerance for budget utilization
             max_unit_price = slot_budget / slot.get('quantity', 1)
-            products = products.filter(price__lte=max_unit_price * 1.1)  # 10% tolerance
+            products = products.filter(price__lte=max_unit_price * 1.5)  # 50% tolerance for better products
             
             # Apply style and room type preferences
             if preferences.get('style') and products.filter(style=preferences['style']).exists():
@@ -387,37 +774,9 @@ class DesignAIService:
         if hasattr(product, 'material') and product.material:
             reasons.append(f"quality {product.material} construction")
         
-        reasons.append("within your budget allocation")
+        reasons.append("selected to optimize your budget while ensuring quality")
         
         return f"This {product.name} was selected because it " + ", ".join(reasons) + "."
-    
-    def _generate_cost_breakdown(self, product_recommendations):
-        """Generate cost breakdown"""
-        breakdown = {}
-        total = 0
-        
-        for prod_rec in product_recommendations:
-            category = getattr(prod_rec.product, 'category', 'Estimated') if prod_rec.product else 'Estimated'
-            category_name = category.name if hasattr(category, 'name') else str(category)
-            
-            if category_name not in breakdown:
-                breakdown[category_name] = {'items': [], 'subtotal': 0}
-            
-            item_info = {
-                'name': prod_rec.product.name if prod_rec.product else f"Estimated {prod_rec.slot_name}",
-                'quantity': prod_rec.quantity,
-                'unit_price': float(prod_rec.unit_price),
-                'total_price': float(prod_rec.total_price)
-            }
-            
-            breakdown[category_name]['items'].append(item_info)
-            breakdown[category_name]['subtotal'] += float(prod_rec.total_price)
-            total += float(prod_rec.total_price)
-        
-        return {
-            'categories': breakdown,
-            'total': total
-        }
     
     def _generate_design_features(self, template, preferences):
         """Generate design features for kitchen and bathroom"""
@@ -442,65 +801,64 @@ class DesignAIService:
         
         return features[:6]
     
-    def _select_template(self, preferences):
-        """Select template for kitchen or bathroom only"""
-        room_type = preferences.get('room_type', 'kitchen')
-        style = preferences.get('style', 'modern')
-        
-        # Only allow kitchen and bathroom
-        if room_type not in ['kitchen', 'bathroom']:
-            room_type = 'kitchen'  # Default to kitchen
-        
-        # Try exact match first
-        template = LayoutTemplate.objects.filter(
-            room_type=room_type,
-            style=style
-        ).first()
-        
-        if not template:
-            template = LayoutTemplate.objects.filter(room_type=room_type).first()
-        
-        if not template:
-            template = LayoutTemplate.objects.filter(room_type='kitchen').first()
-        
-        return template
     
+    def _select_template(self, preferences):
+            """Select template for kitchen or bathroom only"""
+            room_type = preferences.get('room_type', 'kitchen')
+            style = preferences.get('style', 'modern')
+            
+            # Only allow kitchen and bathroom
+            if room_type not in ['kitchen', 'bathroom']:
+                room_type = 'kitchen'  # Default to kitchen
+            
+            # Try exact match first
+            template = LayoutTemplate.objects.filter(
+                room_type=room_type,
+                style=style
+            ).first()
+            
+            if not template:
+                template = LayoutTemplate.objects.filter(room_type=room_type).first()
+            
+            if not template:
+                template = LayoutTemplate.objects.filter(room_type='kitchen').first()
+            
+            return template
+        
     def _generate_design_reasoning(self, preferences, template, dimensions, budget):
-        """Generate AI reasoning for design"""
-        try:
-            room_type = template.room_type
-            style = template.style
-            
-            prompt = f"""
-            As an expert {room_type} designer, create a detailed explanation for this design recommendation.
+            """Generate AI reasoning for design"""
+            try:
+                room_type = template.room_type
+                style = template.style
+                
+                prompt = f"""
+                As an expert {room_type} designer, create a detailed explanation for this design recommendation.
 
-            User Preferences: {json.dumps(preferences)}
-            Template: {template.name} - {template.template_description}
-            Room Dimensions: {dimensions}
-            Budget: ${budget:,}
-            Style: {style}
+                User Preferences: {json.dumps(preferences)}
+                Template: {template.name} - {template.template_description}
+                Room Dimensions: {dimensions}
+                Budget: ${budget:,}
+                Style: {style}
 
-            Provide a professional explanation (2-3 paragraphs) covering:
-            1. Why this {room_type} layout and {style} style perfectly match the user's needs
-            2. How the design maximizes functionality and aesthetics within the space
-            3. How the budget ensures quality fixtures and finishes
+                Provide a professional explanation (2-3 paragraphs) covering:
+                1. Why this {room_type} layout and {style} style perfectly match the user's needs
+                2. How the design maximizes functionality and aesthetics within the space
+                3. How the budget ensures quality fixtures and finishes
 
-            Make it engaging and informative.
-            """
-            
-            response = openai.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.7,
-                max_tokens=400
-            )
-            
-            return response.choices[0].message.content
-            
-        except Exception as e:
-            return f"""This {template.name} design perfectly captures the essence of {template.style} style while maximizing functionality for your {template.room_type}. 
-
-The layout ensures optimal workflow and storage while maintaining the aesthetic appeal you desire. With a budget of ${budget:,}, this design focuses on quality fixtures and finishes that provide lasting value and beauty."""
+                Make it engaging and informative.
+                """
+                
+                response = openai.chat.completions.create(
+                    model="gpt-4o-mini",
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=0.7,
+                    max_tokens=400
+                )
+                
+                return response.choices[0].message.content
+                
+            except Exception as e:
+                return f"""This {template.name} design perfectly captures the essence of {template.style} style while maximizing functionality for your {template.room_type}. The layout ensures optimal workflow and storage while maintaining the aesthetic appeal you desire. With a budget of ${budget:,}, this design focuses on quality fixtures and finishes that provide lasting value and beauty."""
     
     def _ai_select_best_product(self, products, slot, preferences, slot_budget):
         """Select best product based on criteria"""
@@ -521,12 +879,14 @@ The layout ensures optimal workflow and storage while maintaining the aesthetic 
             if preferences.get('room_type') == getattr(product, 'room_type', ''):
                 score += 3
             
-            # Price optimization
+            # Price optimization - prioritize products that use more of the budget
             price_ratio = product.price / max_unit_price if max_unit_price > 0 else 0
-            if 0.8 <= price_ratio <= 1.0:
-                score += 4
-            elif 0.6 <= price_ratio <= 0.8:
-                score += 2
+            if 0.7 <= price_ratio <= 1.2:  # Prefer products that use 70-120% of allocated budget
+                score += 5
+            elif 0.5 <= price_ratio <= 0.7:
+                score += 3
+            elif price_ratio > 1.2:
+                score += 2  # Still consider expensive items
             
             # Availability
             if getattr(product, 'is_available', True):
@@ -545,10 +905,9 @@ The layout ensures optimal workflow and storage while maintaining the aesthetic 
         return products.first()
     
     def generate_pdf_report(self, design_id):
-        """Enhanced PDF generation with better formatting"""
+        """Enhanced PDF generation with complete budget breakdown and labor costs."""
         try:
             design = DesignRecommendation.objects.get(id=design_id)
-            
             buffer = BytesIO()
             doc = SimpleDocTemplate(buffer, pagesize=A4, topMargin=0.5*inch)
             styles = getSampleStyleSheet()
@@ -572,24 +931,30 @@ The layout ensures optimal workflow and storage while maintaining the aesthetic 
                 spaceAfter=15,
                 textColor=colors.HexColor('#34495E')
             )
-            
+
             # Title and header
             story.append(Paragraph("Interior Design Recommendation", title_style))
             story.append(Paragraph(f"{design.layout_template.name} | {design.layout_template.style.title()} Style", styles['Heading3']))
             story.append(Spacer(1, 20))
-            
+
             # Design overview section
             story.append(Paragraph("Design Overview", subtitle_style))
-            print("Raw room_dimensions:", design.room_dimensions)
-            room_dims = parse_room_dimensions(design.room_dimensions)
-
+            room_dims = design.room_dimensions if isinstance(design.room_dimensions, dict) else {}
+            
+            # Calculate costs
+            material_cost = sum(float(prod.total_price) for prod in design.product_recommendations.all())
+            labor_cost = material_cost * 0.15  # 15% of material cost
+            total_project_cost = material_cost + labor_cost
+            
             overview_data = [
                 ['Template:', design.layout_template.name],
                 ['Room Type:', design.layout_template.room_type.replace('_', ' ').title()],
                 ['Style:', design.layout_template.style.title()],
-                ['Dimensions:', f"{room_dims.get('width', 'N/A')}' × {room_dims.get('height', 'N/A')}'"],
-                ['Area:', f"{room_dims.get('area_sqft', 'N/A')} sq ft"],
-                ['Total Investment:', f"${design.total_cost:,.2f}"],
+                ['Dimensions:', f"{room_dims.get('width', 'N/A')}' × {room_dims.get('length', 'N/A')}' × {room_dims.get('height', 'N/A')}'"],
+                ['Area:', f"{room_dims.get('area_sqft', room_dims.get('width', 0) * room_dims.get('length', 0))} sq ft"],
+                ['Material Cost:', f"${material_cost:,.2f}"],
+                ['Labor & Installation:', f"${labor_cost:,.2f}"],
+                ['Total Project Cost:', f"${total_project_cost:,.2f}"],
                 ['Status:', design.status.title()],
             ]
             
@@ -604,132 +969,150 @@ The layout ensures optimal workflow and storage while maintaining the aesthetic 
                 ('BOTTOMPADDING', (0, 0), (-1, -1), 12),
                 ('GRID', (0, 0), (-1, -1), 1, colors.HexColor('#BDC3C7'))
             ]))
-            
             story.append(overview_table)
             story.append(Spacer(1, 25))
-            
+
             # AI reasoning section
             story.append(Paragraph("Design Philosophy & Rationale", subtitle_style))
             story.append(Paragraph(design.ai_reasoning, styles['Normal']))
             story.append(Spacer(1, 25))
-            
+
             # Product recommendations section
-            story.append(Paragraph("Recommended Furniture & Decor", subtitle_style))
+            story.append(Paragraph("Recommended Products & Materials", subtitle_style))
             
             if design.product_recommendations.exists():
-                product_data = [['Item', 'Qty', 'Unit Price', 'Total', 'Purpose']]
+                product_data = [['Item', 'Qty', 'Unit Price', 'Total Price', 'Category/Purpose']]
                 
                 for prod_rec in design.product_recommendations.all():
-                    product_name = prod_rec.product.name if prod_rec.product else f"Estimated {prod_rec.slot_name}"
+                    if prod_rec.product:
+                        # Real product from database
+                        product_name = prod_rec.product.name
+                        category = prod_rec.product.category.name if hasattr(prod_rec.product, 'category') else prod_rec.slot_name.replace('_', ' ').title()
+                    else:
+                        # AI/Estimated product
+                        product_name = f"{prod_rec.slot_name.replace('_', ' ').title()}"
+                        category = self._get_category_from_slot(prod_rec.slot_name)
+                    
                     product_data.append([
                         product_name,
                         str(prod_rec.quantity),
                         f"${prod_rec.unit_price:,.2f}",
                         f"${prod_rec.total_price:,.2f}",
-                        prod_rec.slot_name.replace('_', ' ').title()
+                        category
                     ])
                 
-                product_table = Table(product_data, colWidths=[2.5*inch, 0.6*inch, 1*inch, 1*inch, 1.4*inch])
+                # Add material subtotal row
+                product_data.append(['', '', '', f"${material_cost:,.2f}", 'MATERIAL SUBTOTAL'])
+                
+                product_table = Table(product_data, colWidths=[2.2*inch, 0.6*inch, 1*inch, 1*inch, 1.7*inch])
                 product_table.setStyle(TableStyle([
                     ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#3498DB')),
                     ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
                     ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-                    ('ALIGN', (0, 1), (0, -1), 'LEFT'),  # Left align product names
+                    ('ALIGN', (0, 1), (0, -2), 'LEFT'),  # Left align product names
                     ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-                    ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+                    ('FONTNAME', (0, 1), (-1, -2), 'Helvetica'),
                     ('FONTSIZE', (0, 0), (-1, -1), 10),
                     ('BOTTOMPADDING', (0, 0), (-1, -1), 10),
                     ('TOPPADDING', (0, 0), (-1, -1), 10),
                     ('GRID', (0, 0), (-1, -1), 1, colors.black),
-                    ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.HexColor('#F8F9FA'), colors.white])
+                    ('ROWBACKGROUNDS', (0, 1), (-1, -2), [colors.HexColor('#F8F9FA'), colors.white]),
+                    # Style the subtotal row
+                    ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#E8F4FD')),
+                    ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
                 ]))
-                
                 story.append(product_table)
             else:
-                story.append(Paragraph("No specific products selected - using estimated pricing.", styles['Normal']))
-            
+                story.append(Paragraph("No products selected.", styles['Normal']))
+
             story.append(Spacer(1, 25))
-            
+
             # Cost breakdown section
             story.append(Paragraph("Investment Summary", subtitle_style))
             
-            # Calculate cost breakdown
-            cost_breakdown = {}
-            for prod_rec in design.product_recommendations.all():
-                category = "Estimated Items"
-                if prod_rec.product and hasattr(prod_rec.product, 'category'):
-                    category = prod_rec.product.category.name
-                
-                if category not in cost_breakdown:
-                    cost_breakdown[category] = 0
-                cost_breakdown[category] += float(prod_rec.total_price)
+            # Create cost breakdown table
+            cost_data = [
+                ['Cost Category', 'Amount', 'Percentage'],
+                ['Materials & Products', f"${material_cost:,.2f}", f"{(material_cost/total_project_cost)*100:.1f}%"],
+                ['Labor & Installation', f"${labor_cost:,.2f}", f"{(labor_cost/total_project_cost)*100:.1f}%"],
+                ['Total Project Investment', f"${total_project_cost:,.2f}", "100.0%"]
+            ]
             
-            if cost_breakdown:
-                breakdown_data = [['Category', 'Amount', 'Percentage']]
-                total_cost = float(design.total_cost)
-                
-                for category, amount in cost_breakdown.items():
-                    percentage = (amount / total_cost * 100) if total_cost > 0 else 0
-                    breakdown_data.append([
-                        category,
-                        f"${amount:,.2f}",
-                        f"{percentage:.1f}%"
-                    ])
-                
-                breakdown_data.append(['', '', ''])  # Empty row
-                breakdown_data.append(['Total Investment', f"${total_cost:,.2f}", '100.0%'])
-                
-                breakdown_table = Table(breakdown_data, colWidths=[3*inch, 1.5*inch, 1*inch])
-                breakdown_table.setStyle(TableStyle([
-                    ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#E8F6F3')),
-                    ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#2ECC71')),
-                    ('TEXTCOLOR', (0, -1), (-1, -1), colors.white),
-                    ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-                    ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
-                    ('FONTNAME', (0, 1), (-1, -2), 'Helvetica'),
-                    ('FONTSIZE', (0, 0), (-1, -1), 11),
-                    ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-                    ('ALIGN', (1, 0), (-1, -1), 'RIGHT'),
-                    ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
-                    ('TOPPADDING', (0, 0), (-1, -1), 8),
-                    ('GRID', (0, 0), (-1, -2), 1, colors.HexColor('#BDC3C7')),
-                    ('GRID', (0, -1), (-1, -1), 2, colors.HexColor('#27AE60')),
-                ]))
-                
-                story.append(breakdown_table)
-            
+            cost_table = Table(cost_data, colWidths=[2.5*inch, 1.5*inch, 1.5*inch])
+            cost_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2ECC71')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTNAME', (0, 1), (-1, -2), 'Helvetica'),
+                ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, -1), 11),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 12),
+                ('TOPPADDING', (0, 0), (-1, -1), 12),
+                ('GRID', (0, 0), (-1, -1), 1, colors.black),
+                ('ROWBACKGROUNDS', (0, 1), (-1, -2), [colors.HexColor('#F8F9FA'), colors.white]),
+                ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#D5DBDB')),
+            ]))
+            story.append(cost_table)
             story.append(Spacer(1, 25))
-            
-            # Additional notes section
+
+            # Additional information
             story.append(Paragraph("Important Notes", subtitle_style))
-            notes_text = f"""
-            <b>Budget Optimization:</b> This design maximizes value within your budget range while maintaining style and quality.<br/><br/>
-            <b>Flexibility:</b> Product recommendations can be adjusted based on availability and personal preferences.<br/><br/>
-            <b>Next Steps:</b> Contact our design team to discuss implementation, delivery, and installation options.<br/><br/>
-            <b>Warranty:</b> All recommended products come with manufacturer warranties and our quality guarantee.<br/><br/>
-            <i>This estimate includes furniture only. Delivery, assembly, and installation costs may apply separately.</i>
-            """
+            notes = [
+                f"<b>Budget Optimization:</b> This design maximizes value within your budget range while maintaining style and quality.",
+                f"<b>Flexibility:</b> Product recommendations can be adjusted based on availability and personal preferences.",
+                f"<b>Next Steps:</b> Contact our design team to discuss implementation, delivery, and installation options.",
+                f"<b>Warranty:</b> All recommended products come with manufacturer warranties and our quality guarantee."
+            ]
             
-            story.append(Paragraph(notes_text, styles['Normal']))
+            for note in notes:
+                story.append(Paragraph(note, styles['Normal']))
+                story.append(Spacer(1, 8))
+
+            story.append(Spacer(1, 15))
+            story.append(Paragraph("<i>This estimate includes materials and installation. Delivery costs may apply separately.</i>", styles['Normal']))
             
-            # Footer
+            # Footer with generation info
             story.append(Spacer(1, 30))
             footer_style = ParagraphStyle(
                 'Footer',
                 parent=styles['Normal'],
-                fontSize=10,
+                fontSize=9,
                 textColor=colors.HexColor('#7F8C8D'),
                 alignment=1
             )
-            story.append(Paragraph(f"Generated on {design.created_at.strftime('%B %d, %Y')} | Design ID: {design.id}", footer_style))
-            
-            # Build PDF
+            story.append(Paragraph(f"Generated on {datetime.now().strftime('%B %d, %Y')} | Design ID: {design.id}", footer_style))
+
             doc.build(story)
             pdf_data = buffer.getvalue()
             buffer.close()
-            
             return pdf_data
             
         except Exception as e:
-            print(f"PDF generation error: {e}")
+            print(f"PDF generation error: {str(e)}")
+            import traceback
+            traceback.print_exc()
             return None
+    
+    def _get_category_from_slot(self, slot_name):
+        """Get category name from slot name for better organization"""
+        slot_name = slot_name.lower()
+        
+        if any(word in slot_name for word in ['cabinet', 'storage', 'vanity', 'shelf']):
+            return 'Storage & Cabinetry'
+        elif any(word in slot_name for word in ['light', 'lighting', 'chandelier', 'pendant']):
+            return 'Lighting'
+        elif any(word in slot_name for word in ['fixture', 'shower', 'faucet', 'tap']):
+            return 'Fixtures & Plumbing'
+        elif any(word in slot_name for word in ['appliance', 'hob', 'chimney', 'refrigerator']):
+            return 'Appliances'
+        elif any(word in slot_name for word in ['stool', 'chair', 'seating']):
+            return 'Seating'
+        elif any(word in slot_name for word in ['countertop', 'surface', 'granite', 'marble']):
+            return 'Surfaces & Countertops'
+        elif any(word in slot_name for word in ['sink', 'basin']):
+            return 'Kitchen/Bath Fixtures'
+        elif any(word in slot_name for word in ['mirror', 'accessory', 'towel']):
+            return 'Accessories'
+        else:
+            return 'Miscellaneous'
