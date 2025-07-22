@@ -17,6 +17,7 @@ class GenerateDesignView(APIView):
         session_id = request.data.get('session_id')
         room_dimensions = request.data.get('room_dimensions')  # Optional
         budget_range = request.data.get('budget_range')  # Optional: {'min': 2000, 'max': 5000}
+        layout_template_id = request.data.get('layout_template_id')  # New: Optional/Required
         print("ROOM DIMENSIONS VALUE:", room_dimensions)
 
         if not session_id:
@@ -24,30 +25,37 @@ class GenerateDesignView(APIView):
                 {'error': 'session_id is required'}, 
                 status=status.HTTP_400_BAD_REQUEST
             )
-        
+        if not layout_template_id:
+            return Response(
+                {'error': 'layout_template_id is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
         try:
             # Validate session exists
             session = UserSession.objects.get(id=session_id)
-            
+            # Validate layout template exists
+            try:
+                layout_template = LayoutTemplate.objects.get(id=layout_template_id)
+            except LayoutTemplate.DoesNotExist:
+                return Response(
+                    {'error': 'Invalid layout_template_id'},
+                    status=status.HTTP_404_NOT_FOUND
+                )
             # Initialize design service
             design_service = DesignAIService()
-            
             # Generate design recommendation
             result = design_service.generate_design_recommendation(
                 session_id, 
                 room_dimensions,
-                budget_range
+                budget_range,
+                layout_template_id=layout_template_id
             )
-            
             if 'error' in result:
                 return Response(result, status=status.HTTP_400_BAD_REQUEST)
-            
             # Add additional metadata
             result['generated_at'] = datetime.now().isoformat()
             result['session_preferences'] = session.preferences
-            
             return Response(result, status=status.HTTP_201_CREATED)
-            
         except UserSession.DoesNotExist:
             return Response(
                 {'error': 'Invalid session_id'}, 

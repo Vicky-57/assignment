@@ -119,12 +119,11 @@ class DesignAIService:
         
         return LayoutTemplate.objects.filter(room_type__in=['kitchen', 'bathroom'])
     
-    def generate_design_recommendation(self, session_id, room_dimensions=None, budget=None):
+    def generate_design_recommendation(self, session_id, room_dimensions=None, budget=None, layout_template_id=None):
         """Generate design recommendation with single budget value"""
         try:
             session = UserSession.objects.get(id=session_id)
             preferences = session.preferences
-            
             # Handle budget - use single value instead of min/max
             if isinstance(budget, dict) and 'max' in budget:
                 total_budget = float(budget['max'])
@@ -136,10 +135,12 @@ class DesignAIService:
                 total_budget = 8000 if room_type == 'kitchen' else 4500
 
             # Select appropriate template
-            template = self._select_template(preferences)
+            if layout_template_id:
+                template = LayoutTemplate.objects.get(id=layout_template_id)
+            else:
+                template = self._select_template(preferences)
             if not template:
                 return {'error': 'No suitable template found for your preferences'}
-            
             # Handle product_slots format
             if isinstance(template.product_slots, list):
                 product_slots_dict = {}
@@ -153,13 +154,10 @@ class DesignAIService:
                 product_slots_dict = template.product_slots
             else:
                 return {'error': 'Invalid product_slots format in template'}
-            
             # Use provided dimensions or template defaults
             dimensions = room_dimensions or template.dimensions
-            
             # Generate AI reasoning for the design
             ai_reasoning = self._generate_design_reasoning(preferences, template, dimensions, total_budget)
-            
             # Create design recommendation
             design = DesignRecommendation.objects.create(
                 session=session,
@@ -169,31 +167,25 @@ class DesignAIService:
                 ai_reasoning=ai_reasoning,
                 status='generated'
             )
-            
             # Generate product recommendations for each slot
             total_cost = 0
             product_recommendations = []
-            
             for slot_name, slot_info in product_slots_dict.items():
                 budget_percent = slot_info.get('budget_percentage', 10)
                 slot_budget = total_budget * budget_percent / 100
-
                 slot = {
                     'name': slot_name,
                     'category': slot_info.get('category'),
                     'quantity': slot_info.get('quantity', 1),
                     'max_budget': slot_budget
                 }
-
                 products = self._recommend_products_for_slot(slot, preferences, slot_budget)
-                
                 for product_data in products:
                     try:
                         product = Product.objects.get(id=product_data['product_id'])
                         quantity = product_data['quantity']
                         unit_price = product.price
                         total_price = unit_price * quantity
-                        
                         product_rec = ProductRecommendation.objects.create(
                             design=design,
                             product=product,
@@ -203,13 +195,11 @@ class DesignAIService:
                             unit_price=unit_price,
                             total_price=total_price
                         )
-                        
                         product_recommendations.append(product_rec)
                         total_cost += total_price
                     except Product.DoesNotExist:
                         print(f"Product with ID {product_data['product_id']} not found")
                         continue
-            
             # If no products found, use fallback products
             if total_cost == 0:
                 print("No products found, using fallback...")

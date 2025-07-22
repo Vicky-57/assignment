@@ -419,12 +419,11 @@
                 <div class="design-section">
                     <h2 class="section-title">🎨 Design Controls</h2>
                     <div class="input-group">
-                        <input type="text" class="input-field" id="roomType" placeholder="Room Type (e.g., living room)" disabled>
-                        <input type="text" class="input-field" id="stylePreference" placeholder="Style (e.g., modern)" disabled>
+                        <input type="text" class="input-field" id="roomType" placeholder="Room Type (e.g., kitchen)" disabled>
+                        <input type="text" class="input-field" id="stylePreference" placeholder="Style (e.g., modern,)" disabled>
                     </div>
                     <div class="input-group">
-                        <input type="number" class="input-field" id="budgetMin" placeholder="Min Budget" disabled>
-                        <input type="number" class="input-field" id="budgetMax" placeholder="Max Budget" disabled>
+                        <input type="number" class="input-field" id="budget" placeholder="Budget" disabled>
                     </div>
                     <button class="btn btn-secondary" id="updatePreferencesBtn" disabled>Update Preferences</button>
                     
@@ -663,8 +662,7 @@
                     sendChatBtn.disabled = false;
                     document.getElementById('roomType').disabled = false;
                     document.getElementById('stylePreference').disabled = false;
-                    document.getElementById('budgetMin').disabled = false;
-                    document.getElementById('budgetMax').disabled = false;
+                    document.getElementById('budget').disabled = false;
                     updatePreferencesBtn.disabled = false;
                     getSessionStatusBtn.disabled = false;
                     
@@ -740,25 +738,14 @@
 
             const roomType = document.getElementById('roomType').value.trim();
             const stylePreference = document.getElementById('stylePreference').value.trim();
-            const budgetMin = document.getElementById('budgetMin').value;
-            const budgetMax = document.getElementById('budgetMax').value;
+            const budget = document.getElementById('budget').value;
 
             let message = 'I want to update my preferences: ';
             const preferences = [];
             
             if (roomType) preferences.push(`room type: ${roomType}`);
             if (stylePreference) preferences.push(`style: ${stylePreference}`);
-            if (budgetMin || budgetMax) {
-                let budget = 'budget: ';
-                if (budgetMin && budgetMax) {
-                    budget += `$${budgetMin} - $${budgetMax}`;
-                } else if (budgetMin) {
-                    budget += `minimum $${budgetMin}`;
-                } else if (budgetMax) {
-                    budget += `maximum $${budgetMax}`;
-                }
-                preferences.push(budget);
-            }
+            if (budget) preferences.push(`budget: $${budget}`);
 
             if (preferences.length === 0) {
                 showError('Please enter at least one preference');
@@ -799,8 +786,7 @@
                     // Clear the form
                     document.getElementById('roomType').value = '';
                     document.getElementById('stylePreference').value = '';
-                    document.getElementById('budgetMin').value = '';
-                    document.getElementById('budgetMax').value = '';
+                    document.getElementById('budget').value = '';
                 } else {
                     showError(data.error || 'Failed to update preferences');
                 }
@@ -858,82 +844,6 @@
         }
 
         // Design Agent Functions
-        async function generateDesign() {
-            if (!currentSessionId) {
-                showError('Please start a session in Showroom Agent first');
-                return;
-            }
-
-            const roomDimensions = document.getElementById('roomDimensions').value.trim();
-            
-            showLoading();
-            try {
-                const requestBody = {
-                    session_id: currentSessionId
-                };
-                
-                if (roomDimensions) {
-                    requestBody.room_dimensions = roomDimensions;
-                }
-
-                const response = await fetch(`${API_BASE}/api/design/generate/`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify(requestBody)
-                });
-
-                const data = await response.json();
-                if (response.ok) {
-                    const designResultDiv = document.getElementById('generatedDesign');
-                    const contentDiv = document.getElementById('generatedDesignContent');
-                    
-                    let html = `
-                        <h4>Design Generated Successfully! 🎉</h4>
-                        <p><strong>Design ID:</strong> ${data.design_id || 'N/A'}</p>
-                        <p><strong>Template:</strong> ${data.template_name || 'N/A'}</p>
-                        <p><strong>Room Type:</strong> ${data.room_type || 'N/A'}</p>
-                        <p><strong>Style:</strong> ${data.style || 'N/A'}</p>
-                        <p><strong>Total Cost:</strong> $${data.total_cost || '0'}</p>
-                        <p><strong>Status:</strong> ${data.status || 'N/A'}</p>
-                    `;
-                    
-                    if (data.ai_reasoning) {
-                        html += `<p><strong>AI Reasoning:</strong> ${data.ai_reasoning}</p>`;
-                    }
-                    
-                    if (data.products && data.products.length > 0) {
-                        html += '<h5>Recommended Products:</h5><div class="product-list">';
-                        data.products.forEach(product => {
-                            html += `
-                                <div class="product-item">
-                                    <h4>${product.name}</h4>
-                                    <p><strong>Category:</strong> ${product.category}</p>
-                                    <p><strong>Style:</strong> ${product.style || 'N/A'}</p>
-<p><strong>Material:</strong> ${product.material || 'N/A'}</p>
-                                    <p><strong>Quantity:</strong> ${product.quantity || 1}</p>
-                                    <p class="price"><strong>Price:</strong> $${product.unit_price || '0'}</p>
-                                    ${product.reasoning ? `<p><em>Reasoning:</em> ${product.reasoning}</p>` : ''}
-                                </div>
-                            `;
-                        });
-                        html += '</div>';
-                    }
-                    
-                    contentDiv.innerHTML = html;
-                    designResultDiv.classList.add('show');
-                    showSuccess('Design generated successfully!');
-                } else {
-                    showError(data.error || 'Failed to generate design');
-                }
-            } catch (error) {
-                showError('Network error: ' + error.message);
-                console.error('Generate design error:', error);
-            }
-            hideLoading();
-        }
-
         async function loadTemplates() {
             showLoading();
             try {
@@ -942,9 +852,7 @@
                 
                 if (response.ok) {
                     const templatesContainer = document.getElementById('templatesContainer');
-                    
-                    // In your loadTemplates() function, replace the template card HTML generation part:
-
+                    window.selectedTemplateId = null; // Global for selection
                     if (data.templates && data.templates.length > 0) {
                         let html = '<div class="templates-grid">';
                         data.templates.forEach(template => {
@@ -960,9 +868,9 @@
                                     </div>
                                 `
                                 : '';
-
                             html += `
-                                <div class="template-card">
+                                <div class="template-card" data-template-id="${template.id}" onclick="selectTemplate('${template.id}')" style="cursor:pointer; position:relative;">
+                                    <input type="radio" name="layoutTemplate" value="${template.id}" style="position:absolute; top:15px; left:15px; transform:scale(1.5);" onclick="event.stopPropagation(); selectTemplate('${template.id}')">
                                     ${template.image ? `<img src="${template.image}" alt="${template.name}" style="width: 100%; height: 200px; object-fit: cover; border-radius: 8px; margin-bottom: 15px;">` : ''}
                                     <h4>${template.name}</h4>
                                     <p><strong>Room Type:</strong> ${template.room_type}</p>
@@ -975,12 +883,9 @@
                         });
                         html += '</div>';
                         templatesContainer.innerHTML = html;
-                    }
-                     else {
+                    } else {
                         templatesContainer.innerHTML = '<p>No templates available.</p>';
                     }
-
-                    
                     showSuccess('Templates loaded successfully!');
                 } else {
                     showError(data.error || 'Failed to load templates');
@@ -988,6 +893,99 @@
             } catch (error) {
                 showError('Network error: ' + error.message);
                 console.error('Load templates error:', error);
+            }
+            hideLoading();
+        }
+
+        // Add this function to handle template selection and highlight
+        function selectTemplate(templateId) {
+            window.selectedTemplateId = templateId;
+            // Uncheck all radios and remove highlight
+            document.querySelectorAll('.template-card').forEach(card => {
+                card.style.border = '1.5px solid #eee';
+                card.style.boxShadow = '';
+                const radio = card.querySelector('input[type="radio"]');
+                if (radio) radio.checked = false;
+            });
+            // Highlight selected
+            const selectedCard = document.querySelector(`.template-card[data-template-id='${templateId}']`);
+            if (selectedCard) {
+                selectedCard.style.border = '2.5px solid #667eea';
+                selectedCard.style.boxShadow = '0 0 0 4px #667eea33';
+                const radio = selectedCard.querySelector('input[type="radio"]');
+                if (radio) radio.checked = true;
+            }
+        }
+
+        // Update generateDesign to include layout_template_id
+        async function generateDesign() {
+            if (!currentSessionId) {
+                showError('Please start a session in Showroom Agent first');
+                return;
+            }
+            if (!window.selectedTemplateId) {
+                showError('Please select a layout template before generating a design.');
+                return;
+            }
+            const roomDimensions = document.getElementById('roomDimensions').value.trim();
+            showLoading();
+            try {
+                const requestBody = {
+                    session_id: currentSessionId,
+                    layout_template_id: window.selectedTemplateId
+                };
+                if (roomDimensions) {
+                    requestBody.room_dimensions = roomDimensions;
+                }
+                const response = await fetch(`${API_BASE}/api/design/generate/`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(requestBody)
+                });
+                const data = await response.json();
+                if (response.ok) {
+                    const designResultDiv = document.getElementById('generatedDesign');
+                    const contentDiv = document.getElementById('generatedDesignContent');
+                    let html = `
+                        <h4>Design Generated Successfully! 🎉</h4>
+                        <p><strong>Design ID:</strong> ${data.design_id || 'N/A'}</p>
+                        <p><strong>Template:</strong> ${data.template_name || 'N/A'}</p>
+                        <p><strong>Room Type:</strong> ${data.room_type || 'N/A'}</p>
+                        <p><strong>Style:</strong> ${data.style || 'N/A'}</p>
+                        <p><strong>Total Cost:</strong> $${data.total_cost || '0'}</p>
+                        <p><strong>Status:</strong> ${data.status || 'N/A'}</p>
+                    `;
+                    if (data.ai_reasoning) {
+                        html += `<p><strong>AI Reasoning:</strong> ${data.ai_reasoning}</p>`;
+                    }
+                    if (data.products && data.products.length > 0) {
+                        html += '<h5>Recommended Products:</h5><div class="product-list">';
+                        data.products.forEach(product => {
+                            html += `
+                                <div class="product-item">
+                                    <h4>${product.name}</h4>
+                                    <p><strong>Category:</strong> ${product.category}</p>
+                                    <p><strong>Style:</strong> ${product.style || 'N/A'}</p>
+                                    <p><strong>Material:</strong> ${product.material || 'N/A'}</p>
+                                    <p><strong>Quantity:</strong> ${product.quantity || 1}</p>
+                                    <p class="price"><strong>Price:</strong> $${product.unit_price || '0'}</p>
+                                    ${product.reasoning ? `<p><em>Reasoning:</em> ${product.reasoning}</p>` : ''}
+                                </div>
+                            `;
+                        });
+                        html += '</div>';
+                    }
+                    contentDiv.innerHTML = html;
+                    designResultDiv.classList.add('show');
+                    showSuccess('Design generated successfully!');
+                } else {
+                    showError(data.error || 'Failed to generate design');
+                }
+            } catch (error) {
+                showError('Network error: ' + error.message);
+                console.error('Generate design error:', error);
             }
             hideLoading();
         }

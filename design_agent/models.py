@@ -26,7 +26,7 @@ class DesignRecommendation(models.Model):
     ]
     
     session = models.ForeignKey(UserSession, on_delete=models.CASCADE)
-    layout_template = models.ForeignKey(LayoutTemplate, on_delete=models.CASCADE)
+    layout_template = models.ForeignKey(LayoutTemplate, on_delete=models.CASCADE,null=True,blank=True)
     room_dimensions = models.JSONField()
     user_preferences = models.JSONField()
     total_cost = models.DecimalField(max_digits=12, decimal_places=2, default=0)
