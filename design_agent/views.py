@@ -10,6 +10,7 @@ from showroom_agent.models import UserSession
 from products.models import Product
 import json
 from datetime import datetime, timedelta
+from django.db import transaction
 
 class GenerateDesignView(APIView):
     def post(self, request):
@@ -88,12 +89,13 @@ class GenerateDesignView(APIView):
             
             # Generate design recommendation with additional validation
             print(f"DEBUG: Generating design for session {session_id}")
-            result = design_service.generate_design_recommendation(
-                session_id, 
-                room_dimensions,
-                budget,
-                layout_template_id=layout_template_id
-            )
+            with transaction.atomic():
+                result = design_service.generate_design_recommendation(
+                    session_id,
+                    room_dimensions,
+                    budget,
+                    layout_template_id=layout_template_id
+                )
             
             if 'error' in result:
                 print(f"DEBUG: Design service error: {result['error']}")

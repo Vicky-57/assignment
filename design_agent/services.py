@@ -13,6 +13,8 @@ from products.models import Product
 from showroom_agent.models import UserSession
 from .models import LayoutTemplate, DesignRecommendation, ProductRecommendation
 from datetime import datetime
+from django.db import transaction
+
 
 openai.api_key = settings.OPENAI_API_KEY
 
@@ -120,88 +122,85 @@ class DesignAIService:
         
         return LayoutTemplate.objects.filter(room_type__in=['kitchen', 'bathroom'])
     
+
     def generate_design_recommendation(self, session_id, room_dimensions=None, budget=None, layout_template_id=None):
         """Generate design recommendation maximizing the budget utilization."""
         try:
             print(f"DEBUG: Service layer - Looking for session_id: {session_id}")
             
-            # Enhanced session validation
-            try:
-                session = UserSession.objects.select_for_update().get(id=session_id)
-                print(f"DEBUG: Service layer - Found session: {session.id}, active: {session.is_active}")
-            except UserSession.DoesNotExist:
-                print(f"DEBUG: Service layer - Session {session_id} not found")
-                available_sessions = UserSession.objects.values_list('id', flat=True)
-                print(f"DEBUG: Service layer - Available sessions: {list(available_sessions)}")
-                return {'error': f'Session with ID {session_id} does not exist in database'}
-            
-            # Validate session is active
-            if not session.is_active:
-                return {'error': 'Session is inactive'}
-            
-            # Check if session is expired
-            if hasattr(session, 'is_expired') and session.is_expired():
-                session.is_active = False
-                session.save()
-                return {'error': 'Session has expired'}
-            
-            preferences = session.preferences
-            
-            # Handle budget - use single value and ensure full utilization
-            if budget is not None:
-                total_budget = float(budget)
-            else:
-                # Use default based on room type
-                room_type = preferences.get('room_type', 'kitchen')
-                total_budget = 8000 if room_type == 'kitchen' else 4500
-
-            # Select appropriate template
-            if layout_template_id:
-                try:
-                    template = LayoutTemplate.objects.get(id=layout_template_id)
-                except LayoutTemplate.DoesNotExist:
-                    return {'error': f'Layout template with ID {layout_template_id} does not exist'}
-            else:
-                template = self._select_template(preferences)
-                
-            if not template:
-                return {'error': 'No suitable template found for your preferences'}
-                
-            # Handle product_slots format
-            if isinstance(template.product_slots, list):
-                product_slots_dict = {}
-                for i, slot in enumerate(template.product_slots):
-                    if isinstance(slot, dict):
-                        slot_name = slot.get('name', f'slot_{i}')
-                        product_slots_dict[slot_name] = slot
-                    else:
-                        product_slots_dict[f'slot_{i}'] = {'type': slot, 'quantity': 1}
-            elif isinstance(template.product_slots, dict):
-                product_slots_dict = template.product_slots
-            else:
-                return {'error': 'Invalid product_slots format in template'}
-                
-            # Use provided dimensions or template defaults
-            dimensions = room_dimensions or template.dimensions
-            
-            # Calculate labor cost (15% of material cost)
-            material_budget = total_budget * 0.85  # 85% for materials
-            labor_cost = total_budget * 0.15       # 15% for labor
-            
-            # Generate AI reasoning for the design
-            ai_reasoning = self._generate_design_reasoning(preferences, template, dimensions, total_budget)
-            
-            print(f"DEBUG: Creating DesignRecommendation for session {session.id}")
-            
-            # Create design recommendation with transaction
-            from django.db import transaction
-            
+            # Wrap the locking and all changes inside an atomic transaction
             with transaction.atomic():
-                # Double-check session still exists and is active
+                # Safe to use select_for_update now
+                try:
+                    session = UserSession.objects.select_for_update().get(id=session_id)
+                    print(f"DEBUG: Service layer - Found session: {session.id}, active: {session.is_active}")
+                except UserSession.DoesNotExist:
+                    print(f"DEBUG: Service layer - Session {session_id} not found")
+                    available_sessions = UserSession.objects.values_list('id', flat=True)
+                    print(f"DEBUG: Service layer - Available sessions: {list(available_sessions)}")
+                    return {'error': f'Session with ID {session_id} does not exist in database'}
+                
+                # Validate session is active
+                if not session.is_active:
+                    return {'error': 'Session is inactive'}
+                
+                # Check if session is expired
+                if hasattr(session, 'is_expired') and session.is_expired():
+                    session.is_active = False
+                    session.save()
+                    return {'error': 'Session has expired'}
+                
+                preferences = session.preferences
+                
+                # Handle budget - use single value and ensure full utilization
+                if budget is not None:
+                    total_budget = float(budget)
+                else:
+                    room_type = preferences.get('room_type', 'kitchen')
+                    total_budget = 8000 if room_type == 'kitchen' else 4500
+
+                # Select appropriate template
+                if layout_template_id:
+                    try:
+                        template = LayoutTemplate.objects.get(id=layout_template_id)
+                    except LayoutTemplate.DoesNotExist:
+                        return {'error': f'Layout template with ID {layout_template_id} does not exist'}
+                else:
+                    template = self._select_template(preferences)
+                    
+                if not template:
+                    return {'error': 'No suitable template found for your preferences'}
+
+                # Handle product_slots format
+                if isinstance(template.product_slots, list):
+                    product_slots_dict = {}
+                    for i, slot in enumerate(template.product_slots):
+                        if isinstance(slot, dict):
+                            slot_name = slot.get('name', f'slot_{i}')
+                            product_slots_dict[slot_name] = slot
+                        else:
+                            product_slots_dict[f'slot_{i}'] = {'type': slot, 'quantity': 1}
+                elif isinstance(template.product_slots, dict):
+                    product_slots_dict = template.product_slots
+                else:
+                    return {'error': 'Invalid product_slots format in template'}
+                    
+                # Use provided dimensions or template defaults
+                dimensions = room_dimensions or template.dimensions
+                
+                # Calculate labor cost (15% of material cost)
+                material_budget = total_budget * 0.85
+                labor_cost = total_budget * 0.15
+
+                ai_reasoning = self._generate_design_reasoning(preferences, template, dimensions, total_budget)
+
+                print(f"DEBUG: Creating DesignRecommendation for session {session.id}")
+
+                # Still inside transaction.atomic()
                 session.refresh_from_db()
                 if not session.is_active:
                     return {'error': 'Session became inactive during processing'}
-                    
+
                 design = DesignRecommendation.objects.create(
                     session=session,
                     layout_template=template,
@@ -210,22 +209,20 @@ class DesignAIService:
                     ai_reasoning=ai_reasoning,
                     status='generated'
                 )
-                
+
                 print(f"DEBUG: Created DesignRecommendation with ID: {design.id}")
-            
-            # Generate product recommendations for each slot with full budget utilization
-            product_recommendations = self._generate_optimized_products(
-                design, product_slots_dict, preferences, material_budget
-            )
-            
-            # Calculate totals
-            material_cost = sum(float(prod.total_price) for prod in product_recommendations)
-            total_project_cost = material_cost + labor_cost
-            
-            # Update design with costs
-            design.total_cost = total_project_cost
-            design.save()
-            
+
+                product_recommendations = self._generate_optimized_products(
+                    design, product_slots_dict, preferences, material_budget
+                )
+
+                material_cost = sum(float(prod.total_price) for prod in product_recommendations)
+                total_project_cost = material_cost + labor_cost
+
+                design.total_cost = total_project_cost
+                design.save()
+
+            # You’re now outside the transaction, safe to return full response
             return {
                 'design_id': str(design.id),
                 'template': template.name,
@@ -244,12 +241,14 @@ class DesignAIService:
                 'design_features': self._generate_design_features(template, preferences),
                 'status': 'success'
             }
-            
+
         except Exception as e:
             print(f"DEBUG: Design generation error: {str(e)}")
             import traceback
             traceback.print_exc()
             return {'error': f'Design generation failed: {str(e)}'}
+
+
     def _generate_optimized_products(self, design, product_slots_dict, preferences, material_budget):
         """Generate products that fully utilize the material budget to match user expectations"""
         product_recommendations = []
