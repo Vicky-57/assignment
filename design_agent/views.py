@@ -15,10 +15,11 @@ class GenerateDesignView(APIView):
     def post(self, request):
         """Generate enhanced design recommendation"""
         session_id = request.data.get('session_id')
-        room_dimensions = request.data.get('room_dimensions')  # Optional
-        budget = request.data.get('budget')  # Now a single value
-        layout_template_id = request.data.get('layout_template_id')  # New: Optional/Required
-        print("ROOM DIMENSIONS VALUE:", room_dimensions)
+        room_dimensions = request.data.get('room_dimensions')
+        budget = request.data.get('budget')
+        layout_template_id = request.data.get('layout_template_id')
+        
+        print(f"DEBUG: Received session_id: {session_id}, type: {type(session_id)}")
 
         if not session_id:
             return Response(
@@ -37,8 +38,31 @@ class GenerateDesignView(APIView):
             )
         
         try:
-            # Validate session exists AND is active
-            session = UserSession.objects.get(id=session_id, is_active=True)
+            # Enhanced session validation with debugging
+            print(f"DEBUG: Attempting to find session with ID: {session_id}")
+            
+            # First check if session exists at all
+            if not UserSession.objects.filter(id=session_id).exists():
+                print(f"DEBUG: Session {session_id} does not exist in database")
+                available_sessions = UserSession.objects.values_list('id', flat=True)
+                print(f"DEBUG: Available session IDs: {list(available_sessions)}")
+                return Response(
+                    {
+                        'error': f'Session with ID {session_id} does not exist',
+                        'available_sessions': list(available_sessions)[:10]  # Limit for security
+                    }, 
+                    status=status.HTTP_404_NOT_FOUND
+                )
+            
+            # Then check if it's active
+            session = UserSession.objects.get(id=session_id)
+            print(f"DEBUG: Found session: {session.id}, is_active: {session.is_active}")
+            
+            if not session.is_active:
+                return Response(
+                    {'error': 'Session is not active. Please start a new session.'}, 
+                    status=status.HTTP_410_GONE
+                )
             
             # Check if session is expired
             if session.is_expired():
@@ -52,6 +76,7 @@ class GenerateDesignView(APIView):
             # Validate layout template exists
             try:
                 layout_template = LayoutTemplate.objects.get(id=layout_template_id)
+                print(f"DEBUG: Found layout template: {layout_template.name}")
             except LayoutTemplate.DoesNotExist:
                 return Response(
                     {'error': 'Invalid layout_template_id'},
@@ -61,7 +86,8 @@ class GenerateDesignView(APIView):
             # Initialize design service
             design_service = DesignAIService()
             
-            # Generate design recommendation
+            # Generate design recommendation with additional validation
+            print(f"DEBUG: Generating design for session {session_id}")
             result = design_service.generate_design_recommendation(
                 session_id, 
                 room_dimensions,
@@ -70,6 +96,7 @@ class GenerateDesignView(APIView):
             )
             
             if 'error' in result:
+                print(f"DEBUG: Design service error: {result['error']}")
                 return Response(result, status=status.HTTP_400_BAD_REQUEST)
             
             # Add additional metadata
@@ -79,17 +106,19 @@ class GenerateDesignView(APIView):
             return Response(result, status=status.HTTP_201_CREATED)
             
         except UserSession.DoesNotExist:
+            print(f"DEBUG: UserSession.DoesNotExist for ID: {session_id}")
             return Response(
-                {'error': 'Invalid or inactive session_id. Please start a new session.'}, 
+                {'error': f'Session with ID {session_id} not found. Please start a new session.'}, 
                 status=status.HTTP_404_NOT_FOUND
             )
         except Exception as e:
-            print(f"Design generation error: {str(e)}")  # For debugging
+            print(f"DEBUG: Unexpected error in GenerateDesignView: {str(e)}")
+            import traceback
+            traceback.print_exc()
             return Response(
                 {'error': f'Design generation failed: {str(e)}'}, 
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
-
 class DesignDetailsView(APIView):
     def get(self, request, design_id):
         """Get comprehensive design recommendation details"""

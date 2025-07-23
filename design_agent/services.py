@@ -123,7 +123,28 @@ class DesignAIService:
     def generate_design_recommendation(self, session_id, room_dimensions=None, budget=None, layout_template_id=None):
         """Generate design recommendation maximizing the budget utilization."""
         try:
-            session = UserSession.objects.get(id=session_id)
+            print(f"DEBUG: Service layer - Looking for session_id: {session_id}")
+            
+            # Enhanced session validation
+            try:
+                session = UserSession.objects.select_for_update().get(id=session_id)
+                print(f"DEBUG: Service layer - Found session: {session.id}, active: {session.is_active}")
+            except UserSession.DoesNotExist:
+                print(f"DEBUG: Service layer - Session {session_id} not found")
+                available_sessions = UserSession.objects.values_list('id', flat=True)
+                print(f"DEBUG: Service layer - Available sessions: {list(available_sessions)}")
+                return {'error': f'Session with ID {session_id} does not exist in database'}
+            
+            # Validate session is active
+            if not session.is_active:
+                return {'error': 'Session is inactive'}
+            
+            # Check if session is expired
+            if hasattr(session, 'is_expired') and session.is_expired():
+                session.is_active = False
+                session.save()
+                return {'error': 'Session has expired'}
+            
             preferences = session.preferences
             
             # Handle budget - use single value and ensure full utilization
@@ -136,9 +157,13 @@ class DesignAIService:
 
             # Select appropriate template
             if layout_template_id:
-                template = LayoutTemplate.objects.get(id=layout_template_id)
+                try:
+                    template = LayoutTemplate.objects.get(id=layout_template_id)
+                except LayoutTemplate.DoesNotExist:
+                    return {'error': f'Layout template with ID {layout_template_id} does not exist'}
             else:
                 template = self._select_template(preferences)
+                
             if not template:
                 return {'error': 'No suitable template found for your preferences'}
                 
@@ -166,15 +191,27 @@ class DesignAIService:
             # Generate AI reasoning for the design
             ai_reasoning = self._generate_design_reasoning(preferences, template, dimensions, total_budget)
             
-            # Create design recommendation
-            design = DesignRecommendation.objects.create(
-                session=session,
-                layout_template=template,
-                room_dimensions=dimensions,
-                user_preferences=preferences,
-                ai_reasoning=ai_reasoning,
-                status='generated'
-            )
+            print(f"DEBUG: Creating DesignRecommendation for session {session.id}")
+            
+            # Create design recommendation with transaction
+            from django.db import transaction
+            
+            with transaction.atomic():
+                # Double-check session still exists and is active
+                session.refresh_from_db()
+                if not session.is_active:
+                    return {'error': 'Session became inactive during processing'}
+                    
+                design = DesignRecommendation.objects.create(
+                    session=session,
+                    layout_template=template,
+                    room_dimensions=dimensions,
+                    user_preferences=preferences,
+                    ai_reasoning=ai_reasoning,
+                    status='generated'
+                )
+                
+                print(f"DEBUG: Created DesignRecommendation with ID: {design.id}")
             
             # Generate product recommendations for each slot with full budget utilization
             product_recommendations = self._generate_optimized_products(
@@ -209,11 +246,10 @@ class DesignAIService:
             }
             
         except Exception as e:
-            print(f"Design generation error: {str(e)}")
+            print(f"DEBUG: Design generation error: {str(e)}")
             import traceback
             traceback.print_exc()
             return {'error': f'Design generation failed: {str(e)}'}
-
     def _generate_optimized_products(self, design, product_slots_dict, preferences, material_budget):
         """Generate products that fully utilize the material budget to match user expectations"""
         product_recommendations = []
