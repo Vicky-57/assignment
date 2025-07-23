@@ -35,9 +35,20 @@ class GenerateDesignView(APIView):
                 {'error': 'budget is required'},
                 status=status.HTTP_400_BAD_REQUEST
             )
+        
         try:
-            # Validate session exists
-            session = UserSession.objects.get(id=session_id)
+            # Validate session exists AND is active
+            session = UserSession.objects.get(id=session_id, is_active=True)
+            
+            # Check if session is expired
+            if session.is_expired():
+                session.is_active = False
+                session.save()
+                return Response(
+                    {'error': 'Session has expired. Please start a new session.'}, 
+                    status=status.HTTP_410_GONE
+                )
+            
             # Validate layout template exists
             try:
                 layout_template = LayoutTemplate.objects.get(id=layout_template_id)
@@ -46,8 +57,10 @@ class GenerateDesignView(APIView):
                     {'error': 'Invalid layout_template_id'},
                     status=status.HTTP_404_NOT_FOUND
                 )
+            
             # Initialize design service
             design_service = DesignAIService()
+            
             # Generate design recommendation
             result = design_service.generate_design_recommendation(
                 session_id, 
@@ -55,18 +68,23 @@ class GenerateDesignView(APIView):
                 budget,
                 layout_template_id=layout_template_id
             )
+            
             if 'error' in result:
                 return Response(result, status=status.HTTP_400_BAD_REQUEST)
+            
             # Add additional metadata
             result['generated_at'] = datetime.now().isoformat()
             result['session_preferences'] = session.preferences
+            
             return Response(result, status=status.HTTP_201_CREATED)
+            
         except UserSession.DoesNotExist:
             return Response(
-                {'error': 'Invalid session_id'}, 
+                {'error': 'Invalid or inactive session_id. Please start a new session.'}, 
                 status=status.HTTP_404_NOT_FOUND
             )
         except Exception as e:
+            print(f"Design generation error: {str(e)}")  # For debugging
             return Response(
                 {'error': f'Design generation failed: {str(e)}'}, 
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR

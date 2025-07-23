@@ -12,7 +12,7 @@ class LayoutTemplate(models.Model):
     template_description = models.TextField()
     color_palette = models.JSONField(null=True, blank=True, default=list)
     estimated_budget = models.JSONField(null=True, blank=True, default=dict)
-     
+    
     def __str__(self):
         return f"{self.name} - {self.room_type}"
 

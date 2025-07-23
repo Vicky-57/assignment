@@ -62,9 +62,6 @@ WSGI_APPLICATION = 'assignmentvr.wsgi.application'
 
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
 
-CORS_ALLOW_ALL_ORIGINS = True
-CORS_ALLOW_CREDENTIALS = True
-
 
 DATABASES = {
     
@@ -133,17 +130,27 @@ USE_I18N = True
 
 USE_TZ = True
 
+CSRF_TRUSTED_ORIGINS = [
+    'http://13.60.46.112:8000',
+    'http://localhost:8000',
+    'http://127.0.0.1:8000',
+]
+
+# Allow all hosts for testing (be more specific in production)
+ALLOWED_HOSTS = ['*']
+
+# REST Framework settings
 REST_FRAMEWORK = {
-    'DEFAULT_THROTTLE_CLASSES': [
-        'rest_framework.throttling.AnonRateThrottle',
-        'rest_framework.throttling.UserRateThrottle'
+    'DEFAULT_AUTHENTICATION_CLASSES': [],  # No authentication required
+    'DEFAULT_PERMISSION_CLASSES': [],      # No permissions required
+    'DEFAULT_RENDERER_CLASSES': [
+        'rest_framework.renderers.JSONRenderer',
     ],
-    'DEFAULT_THROTTLE_RATES': {
-        'anon': '100/hour',
-        'user': '1000/hour'
-    }
 }
 
+# CORS settings (if using django-cors-headers)
+CORS_ALLOW_ALL_ORIGINS = True
+CORS_ALLOW_CREDENTIALS = True
 
 STATIC_URL = 'static/'
 MEDIA_URL = '/media/'
